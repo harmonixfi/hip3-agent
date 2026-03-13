@@ -1,0 +1,127 @@
+[
+  {
+    "position_id": "pos_xyz_GOOGL",
+    "strategy_type": "SPOT_PERP",
+    "base": "GOOGL",
+    "status": "OPEN",
+    "amount_usd": 1862.00,
+    "legs": [
+      {
+        "leg_id": "pos_xyz_GOOGL_SPOT",
+        "venue": "hyperliquid",
+        "inst_id": "GOOGL",
+        "side": "LONG",
+        "qty": 3.0,
+        "qty_type": "token"
+      },
+      {
+        "leg_id": "pos_xyz_GOOGL_PERP",
+        "venue": "hyperliquid",
+        "inst_id": "xyz:GOOGL",
+        "side": "SHORT",
+        "qty": 3.0,
+        "qty_type": "token"
+      }
+    ]
+  },
+  {
+    "position_id": "pos_xyz_MSFT",
+    "strategy_type": "SPOT_PERP",
+    "base": "MSFT",
+    "status": "OPEN",
+    "amount_usd": 4036.96,
+    "legs": [
+      {
+        "leg_id": "pos_xyz_MSFT_SPOT",
+        "venue": "hyperliquid",
+        "inst_id": "MSFT",
+        "side": "LONG",
+        "qty": 5.2,
+        "qty_type": "token"
+      },
+      {
+        "leg_id": "pos_xyz_MSFT_PERP",
+        "venue": "hyperliquid",
+        "inst_id": "xyz:MSFT",
+        "side": "SHORT",
+        "qty": 5.2,
+        "qty_type": "token"
+      }
+    ]
+  },
+  {
+    "position_id": "pos_xyz_NVDA",
+    "strategy_type": "SPOT_PERP",
+    "base": "NVDA",
+    "status": "OPEN",
+    "amount_usd": 3807.80,
+    "legs": [
+      {
+        "leg_id": "pos_xyz_NVDA_SPOT",
+        "venue": "hyperliquid",
+        "inst_id": "NVDA",
+        "side": "LONG",
+        "qty": 10.0,
+        "qty_type": "token"
+      },
+      {
+        "leg_id": "pos_xyz_NVDA_PERP",
+        "venue": "hyperliquid",
+        "inst_id": "xyz:NVDA",
+        "side": "SHORT",
+        "qty": 10.0,
+        "qty_type": "token"
+      }
+    ]
+  },
+  {
+    "position_id": "pos_xyz_GOLD",
+    "strategy_type": "SPOT_PERP",
+    "base": "GOLD",
+    "status": "CLOSED",
+    "amount_usd": 19950.00,
+    "legs": [
+      {
+        "leg_id": "pos_xyz_GOLD_SPOT",
+        "venue": "hyperliquid",
+        "inst_id": "XAUT0/USDC",
+        "side": "LONG",
+        "qty": 2.0017,
+        "qty_type": "token"
+      },
+      {
+        "leg_id": "pos_xyz_GOLD_PERP",
+        "venue": "hyperliquid",
+        "inst_id": "xyz:GOLD",
+        "side": "SHORT",
+        "qty": 2.0017,
+        "qty_type": "token"
+      }
+    ]
+  },
+  {
+    "position_id": "pos_hyna_HYPE",
+    "strategy_type": "SPOT_PERP",
+    "base": "HYPE",
+    "status": "CLOSED",
+    "amount_usd": 14606.00,
+    "legs": [
+      {
+        "leg_id": "pos_hyna_HYPE_SPOT",
+        "venue": "hyperliquid",
+        "inst_id": "HYPE",
+        "side": "LONG",
+        "qty": 215.08,
+        "qty_type": "token"
+      },
+      {
+        "leg_id": "pos_hyna_HYPE_PERP",
+        "venue": "hyperliquid",
+        "inst_id": "hyna:HYPE",
+        "side": "SHORT",
+        "qty": 215.08,
+        "qty_type": "token"
+      }
+    ]
+  }
+]

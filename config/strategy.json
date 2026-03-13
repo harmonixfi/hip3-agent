@@ -1,0 +1,25 @@
+{
+  "note": "Harmonix strategy configuration for Hyperliquid spot-perp delta-neutral advisory",
+  "oi_rank_max": 200,
+  "target_exchanges": [
+    "hyperliquid",
+    "tradexyz",
+    "felix",
+    "kinetiq",
+    "hyena"
+  ],
+  "spot_perp": {
+    "min_funding_apr": 20.0,
+    "allow_short_spot": false,
+    "quotes": [
+      "USDC",
+      "USD",
+      "USDT"
+    ],
+    "note": "Harmonix v1 only considers same-asset spot + perp on Hyperliquid and HIP3 deployers, while keeping candidate ranking scoped separately. APR14 >= 20 remains the floor for tradable screening."
+  },
+  "perp_perp": {
+    "enabled": false,
+    "note": "Out of scope for Harmonix v1."
+  }
+}

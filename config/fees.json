@@ -1,0 +1,83 @@
+{
+  "note": "Fee schedule per venue + product type. Fees in basis points (bps). 1% = 100 bps.",
+  "note_source": "OKX spot: regular user baseline from OKX fee schedule (Lvl 1). Others: default tier.",
+  "default_assumptions": {
+    "execution_type": "market",
+    "proxy_slippage_bps": 10
+  },
+  "venues": {
+    "okx": {
+      "spot": {
+        "maker_bps": 8,
+        "taker_bps": 10,
+        "source": "https://www.okx.com/fees"
+      },
+      "perp": {
+        "maker_bps": 2,
+        "taker_bps": 5,
+        "source": "https://www.okx.com/fees"
+      }
+    },
+    "hyperliquid": {
+      "spot": {
+        "maker_bps": 1.0,
+        "taker_bps": 4.5,
+        "source": "Assume same taker/maker baseline as Hyperliquid perp until a separate spot schedule is confirmed"
+      },
+      "perp": {
+        "maker_bps": 1.0,
+        "taker_bps": 4.5,
+        "source": "Bean update: HL baseline ~0.045% taker, ~0.010% maker (some sources ~0.015%)"
+      }
+    },
+    "hyena": {
+      "perp": {
+        "maker_bps": 1.67,
+        "taker_bps": 5.0,
+        "source": "Bean update: Hyena taker 0.0500%, maker 0.0167%"
+      }
+    },
+    "kinetiq": {
+      "perp": {
+        "maker_bps": 3.8,
+        "taker_bps": 4.31,
+        "source": "Bean update: Marketsxyz taker/maker 0.0431% / 0.038% (Loris key = kinetiq)"
+      }
+    },
+    "tradexyz": {
+      "perp": {
+        "maker_bps": 3.0,
+        "taker_bps": 9.0,
+        "source": "Bean update (earlier): tradexyz taker 0.09%, maker 0.03%"
+      }
+    },
+    "felix": {
+      "perp": {
+        "maker_bps": -2,
+        "taker_bps": 5,
+        "source": "Assume same as Hyperliquid (HIP-3 / HyperCore-derived venue)"
+      }
+    },
+    "paradex": {
+      "perp": {
+        "maker_bps": 0,
+        "taker_bps": 3,
+        "source": "Paradex default tier"
+      }
+    },
+    "lighter": {
+      "perp": {
+        "maker_bps": 2,
+        "taker_bps": 7,
+        "source": "Lighter default tier"
+      }
+    },
+    "ethereal": {
+      "perp": {
+        "maker_bps": 0,
+        "taker_bps": 3,
+        "source": "Bean confirmed fees"
+      }
+    }
+  }
+}

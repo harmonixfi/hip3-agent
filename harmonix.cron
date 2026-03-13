@@ -1,0 +1,32 @@
+# Harmonix position manager - macOS Crontab
+# Workspace: /Users/harmonix/.openclaw/workspace-hip3-agent
+
+# Pull position snapshots every 5 minutes
+*/5 * * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && .venv/bin/python scripts/pull_positions_v3.py --db tracking/db/arbit_v3.db --venues hyperliquid >> logs/pull_positions.log 2>&1
+
+# Pull Hyperliquid market data (funding + prices) every hour
+20 * * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && .venv/bin/python scripts/pull_hyperliquid_v3.py >> logs/pull_hyperliquid.log 2>&1
+
+# Check alerts every 5 minutes (offset by 1 minute)
+1-56/5 * * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && .venv/bin/python scripts/pm_alerts.py >> logs/pm_alerts.log 2>&1
+
+# Send alerts to Discord only when alerts exist (offset by 2 minutes)
+2-57/5 * * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && . .arbit_env && /bin/bash scripts/send_pm_alerts.sh >> logs/send_pm_alerts.log 2>&1
+
+# System healthcheck (send only on issues) — every 15 minutes
+4-59/15 * * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && /bin/bash scripts/send_pm_health.sh >> logs/pm_health.log 2>&1
+
+# Realized funding/fees ledger ingest (hourly)
+37 * * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && .venv/bin/python scripts/pm_cashflows.py ingest --venues hyperliquid >> logs/pm_cashflows_ingest.log 2>&1
+
+# Daily cashflow rollup snapshot to logs
+45 0 * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && .venv/bin/python scripts/pm_cashflows.py report >> logs/pm_cashflows_report.log 2>&1
+
+# Daily funding report + portfolio review to Discord (09:05 local)
+5 9 * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && .venv/bin/python scripts/report_daily_funding_with_portfolio.py --top 20 >> logs/daily_funding_portfolio.log 2>&1
+
+# Daily equity snapshot + report to Discord (09:10 local)
+10 9 * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && .venv/bin/python scripts/equity_daily.py snapshot >> logs/equity_daily.log 2>&1
+
+# Daily DB backup (non-destructive, 02:50 local)
+50 2 * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && .venv/bin/python scripts/db_v3_backup.py --keep-days 14 >> logs/db_v3_backup.log 2>&1

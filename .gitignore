@@ -1,0 +1,65 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Environment / Secrets
+.arbit_env
+.env
+*.env
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Data files (generated/cached)
+data/
+*.csv
+*.json.bak
+
+# Generated reports
+daily_funding_report_*.md
+
+# Runtime state files
+tracking/cron_state.json
+tracking/pm_alert_state*.json
+tracking/pm_cashflow_state.json
+
+# Database backups
+tracking/db/
+
+# Generated cron run reports
+tracking/reports/
+
+# Build loop / progress notes (generated during runs)
+tracking/build_loop_*.md
+tracking/cron_progress.md
+
+# Agent workspace state
+.openclaw/
+.firecrawl/
+memory/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

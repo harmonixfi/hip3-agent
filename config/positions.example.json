@@ -1,0 +1,38 @@
+[
+  {
+    "position_id": "EXAMPLE_BTC_SPOT_PERP_HL_001",
+    "strategy_type": "SPOT_PERP",
+    "base": "BTC",
+    "status": "OPEN",
+    "amount_usd": 6500,
+    "open_fees_usd": 2.93,
+    "thresholds": {
+      "rebalance_delta_usd_warn": 100,
+      "rebalance_delta_usd_crit": 300,
+      "buffer_warn_pct": 0.35,
+      "buffer_crit_pct": 0.25,
+      "buffer_emerg_pct": 0.15
+    },
+    "legs": [
+      {
+        "leg_id": "EXAMPLE_BTC_SPOT_LONG_HL",
+        "venue": "hyperliquid",
+        "inst_id": "BTC",
+        "side": "LONG",
+        "qty": 0.05,
+        "qty_type": "base"
+      },
+      {
+        "leg_id": "EXAMPLE_BTC_PERP_SHORT_HL",
+        "venue": "hyperliquid",
+        "inst_id": "BTC",
+        "side": "SHORT",
+        "qty": 0.05,
+        "qty_type": "base",
+        "leverage": 2,
+        "margin_mode": "isolated",
+        "collateral": 1500
+      }
+    ]
+  }
+]

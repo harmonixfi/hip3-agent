@@ -1,0 +1,4 @@
+# Arbit (funding-arb + position manager)
+# Install: pip install -r requirements.txt
+
+streamlit>=1.30

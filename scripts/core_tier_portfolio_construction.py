@@ -6,7 +6,6 @@ import csv
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from itertools import combinations
 from pathlib import Path
 from typing import Iterable
 
@@ -19,7 +18,6 @@ from tracking.analytics.cost_model_v3 import CostModelV3
 
 APPROVED_FUNDING_VENUES = ("hyperliquid", "tradexyz", "hyena", "kinetiq")
 FRESHNESS_MAX_HOURS = 12.0
-PAIR_QUALITY_FLOOR = 60.0
 NORMALIZED_BREAKEVEN_NOTIONAL_USD = 150_000.0
 SUPPORTED_FLAGS = {
     "STALE_DATA",
@@ -61,7 +59,6 @@ class CoreCandidate:
     effective_apr_anchor: float | None = None
     breakeven_estimate_days: float | None = None
     breakeven_notional_usd: float | None = None
-    eligible_for_basket: bool = False
     funding_samples: list[tuple[datetime, float, int | None]] = field(default_factory=list)
 
 
@@ -70,33 +67,6 @@ class CandidateBundle:
     input_state: str
     warnings: list[str]
     candidates: list[CoreCandidate]
-
-
-@dataclass
-class BasketPosition:
-    symbol: str
-    funding_venue: str
-    capital_usd: float
-    weight: float
-
-
-@dataclass
-class StrategyBasket:
-    strategy_label: str
-    positions: list[BasketPosition]
-    idle_capital_usd: float
-    weighted_effective_apr: float | None
-    weighted_pair_quality_score: float | None
-    weighted_stability_score: float | None
-    execution_uncertainty_count: int
-    decay_concern_count: int
-
-
-@dataclass
-class StrategyVerdict:
-    method_verdict: str
-    deployment_verdict: str
-    rationale: list[str] = field(default_factory=list)
 
 
 def passes_shared_data_gate(candidate: CoreCandidate) -> bool:
@@ -310,8 +280,6 @@ def _breakeven_score(days: float | None) -> tuple[float, list[str]]:
 
 
 def compute_pair_quality_score(candidate: CoreCandidate) -> float | None:
-    if candidate.tradeability_status == "NON_EXECUTABLE":
-        return 0.0
     if None in (candidate.apr_latest, candidate.apr_7d, candidate.apr_14d):
         return None
     if candidate.funding_consistency_score is None:
@@ -363,11 +331,6 @@ def score_candidate(candidate: CoreCandidate) -> CoreCandidate:
         list(candidate.flags) + consistency_flags + trend_flags + liquidity_flags + breakeven_flags
     )
     candidate.pair_quality_score = compute_pair_quality_score(candidate)
-    candidate.eligible_for_basket = (
-        passes_shared_data_gate(candidate)
-        and candidate.tradeability_status == "EXECUTABLE"
-        and "DECAYING_REGIME" not in candidate.flags
-    )
     return candidate
 
 
@@ -455,201 +418,3 @@ def load_core_candidates(
     return CandidateBundle(input_state=input_state, warnings=warnings, candidates=candidates)
 
 
-def _strategy_2_weight_template(num_positions: int) -> list[float]:
-    templates = {
-        0: [],
-        1: [0.40],
-        2: [0.40, 0.40],
-        3: [0.40, 0.35, 0.25],
-        4: [0.35, 0.30, 0.20, 0.15],
-    }
-    return templates.get(num_positions, templates[4])
-
-
-def _materialize_basket(
-    strategy_label: str,
-    candidates: list[CoreCandidate],
-    weights: list[float],
-    *,
-    core_capital_usd: float,
-) -> StrategyBasket:
-    positions: list[BasketPosition] = []
-    deployed_weight = 0.0
-    for candidate, weight in zip(candidates, weights):
-        positions.append(
-            BasketPosition(
-                symbol=candidate.symbol,
-                funding_venue=candidate.funding_venue,
-                capital_usd=core_capital_usd * weight,
-                weight=weight,
-            )
-        )
-        deployed_weight += weight
-    idle_capital_usd = core_capital_usd * max(0.0, 1.0 - deployed_weight)
-    weighted_effective_apr = None
-    weighted_pair_quality_score = None
-    weighted_stability_score = None
-    if positions:
-        total_weight = sum(weight for weight in weights[: len(positions)]) or 1.0
-        weighted_effective_apr = sum((c.effective_apr_anchor or 0.0) * w for c, w in zip(candidates, weights)) / total_weight
-        weighted_pair_quality_score = sum((c.pair_quality_score or 0.0) * w for c, w in zip(candidates, weights)) / total_weight
-        weighted_stability_score = sum((c.stability_score or 0.0) * w for c, w in zip(candidates, weights)) / total_weight
-    return StrategyBasket(
-        strategy_label=strategy_label,
-        positions=positions,
-        idle_capital_usd=idle_capital_usd,
-        weighted_effective_apr=weighted_effective_apr,
-        weighted_pair_quality_score=weighted_pair_quality_score,
-        weighted_stability_score=weighted_stability_score,
-        execution_uncertainty_count=sum(1 for c in candidates if c.tradeability_status != "EXECUTABLE"),
-        decay_concern_count=sum(1 for c in candidates if "DECAYING_REGIME" in c.flags),
-    )
-
-
-def build_strategy_2_basket(candidates: list[CoreCandidate], *, core_capital_usd: float) -> StrategyBasket:
-    ranked = [
-        candidate
-        for candidate in candidates
-        if candidate.eligible_for_basket
-        and (candidate.pair_quality_score or 0.0) >= PAIR_QUALITY_FLOOR
-    ]
-    ranked.sort(
-        key=lambda candidate: (
-            candidate.stability_score or float("-inf"),
-            candidate.pair_quality_score or float("-inf"),
-        ),
-        reverse=True,
-    )
-    chosen = ranked[:4]
-    return _materialize_basket(
-        "STRATEGY_2",
-        chosen,
-        _strategy_2_weight_template(len(chosen)),
-        core_capital_usd=core_capital_usd,
-    )
-
-
-def _strategy_3_sort_key(basket: StrategyBasket) -> tuple[float, float, float, float, float, float]:
-    largest_weight = max((position.weight for position in basket.positions), default=0.0)
-    deploy_ratio = 1.0 - (basket.idle_capital_usd / max(1.0, basket.idle_capital_usd + sum(p.capital_usd for p in basket.positions)))
-    return (
-        basket.execution_uncertainty_count,
-        basket.decay_concern_count,
-        largest_weight,
-        -(basket.weighted_pair_quality_score or 0.0),
-        -deploy_ratio,
-        -(basket.weighted_effective_apr or 0.0),
-    )
-
-
-def _materialize_strategy_3_combo(
-    combo: tuple[CoreCandidate, ...],
-    *,
-    core_capital_usd: float,
-) -> StrategyBasket | None:
-    if not combo:
-        return None
-    scores = [max(candidate.pair_quality_score or 0.0, 0.0) for candidate in combo]
-    total = sum(scores)
-    if total <= 0:
-        return None
-    raw_weights = [score / total for score in scores]
-    weights = list(raw_weights)
-    remaining = 1.0
-    open_indices = set(range(len(weights)))
-
-    # Reallocate any leftover capacity after 40% caps across the remaining names.
-    while open_indices:
-        open_total = sum(raw_weights[idx] for idx in open_indices)
-        if open_total <= 0:
-            break
-        newly_capped: set[int] = set()
-        for idx in list(open_indices):
-            proposed = remaining * (raw_weights[idx] / open_total)
-            if proposed >= 0.40:
-                weights[idx] = 0.40
-                remaining -= 0.40
-                newly_capped.add(idx)
-            else:
-                weights[idx] = proposed
-        if not newly_capped:
-            break
-        open_indices -= newly_capped
-
-    if open_indices and remaining > 0:
-        open_total = sum(raw_weights[idx] for idx in open_indices)
-        for idx in open_indices:
-            weights[idx] = remaining * (raw_weights[idx] / open_total)
-
-    if any(weight < 0.15 for weight in weights):
-        return None
-    return _materialize_basket("STRATEGY_3", list(combo), weights, core_capital_usd=core_capital_usd)
-
-
-def build_strategy_3_basket(candidates: list[CoreCandidate], *, core_capital_usd: float) -> StrategyBasket:
-    executable_pool = [
-        candidate
-        for candidate in candidates
-        if candidate.eligible_for_basket and (candidate.pair_quality_score or 0.0) >= PAIR_QUALITY_FLOOR
-    ]
-    executable_pool.sort(key=lambda candidate: candidate.pair_quality_score or float("-inf"), reverse=True)
-    pool = executable_pool[:8]
-    if len(pool) < 8:
-        fallback_pool = [
-            candidate
-            for candidate in candidates
-            if passes_shared_data_gate(candidate)
-            and candidate.tradeability_status == "CROSS_CHECK_NEEDED"
-            and "DECAYING_REGIME" not in candidate.flags
-            and candidate not in pool
-        ]
-        fallback_pool.sort(key=lambda candidate: candidate.pair_quality_score or float("-inf"), reverse=True)
-        pool.extend(fallback_pool[: max(0, 8 - len(pool))])
-    valid_baskets: list[StrategyBasket] = []
-    for size in (2, 3, 4):
-        for combo in combinations(pool, size):
-            basket = _materialize_strategy_3_combo(combo, core_capital_usd=core_capital_usd)
-            if basket is not None:
-                valid_baskets.append(basket)
-    if not valid_baskets:
-        return _materialize_basket("STRATEGY_3", [], [], core_capital_usd=core_capital_usd)
-    valid_baskets.sort(key=_strategy_3_sort_key)
-    return valid_baskets[0]
-
-
-def compare_strategy_baskets(basket_a: StrategyBasket, basket_b: StrategyBasket) -> StrategyVerdict:
-    ordered = sorted((basket_a, basket_b), key=_strategy_3_sort_key)
-    winner, loser = ordered[0], ordered[1]
-    if not winner.positions and not loser.positions:
-        return StrategyVerdict(
-            method_verdict="NO_DEPLOYABLE_METHOD",
-            deployment_verdict="DO_NOT_DEPLOY",
-            rationale=["No basket passed the shared gate and execution filters."],
-        )
-    if _strategy_3_sort_key(winner) == _strategy_3_sort_key(loser):
-        return StrategyVerdict(
-            method_verdict="NO_MATERIAL_DIFFERENCE",
-            deployment_verdict="PARTIAL_CORE_DEPLOY" if winner.positions else "DO_NOT_DEPLOY",
-            rationale=["The two strategies produced materially equivalent baskets under current data."],
-        )
-    deploy_ratio = 1.0 - (
-        winner.idle_capital_usd
-        / max(1.0, winner.idle_capital_usd + sum(position.capital_usd for position in winner.positions))
-    )
-    if not winner.positions:
-        deployment_verdict = "DO_NOT_DEPLOY"
-    elif deploy_ratio >= 0.9:
-        deployment_verdict = "FULL_CORE_DEPLOY"
-    elif deploy_ratio >= 0.5:
-        deployment_verdict = "PARTIAL_CORE_DEPLOY"
-    else:
-        deployment_verdict = "MINIMAL_PILOT_ONLY"
-    rationale = [
-        f"{winner.strategy_label} wins on ordered basket comparison",
-        f"execution uncertainty {winner.execution_uncertainty_count} vs {loser.execution_uncertainty_count}",
-    ]
-    return StrategyVerdict(
-        method_verdict=winner.strategy_label,
-        deployment_verdict=deployment_verdict,
-        rationale=rationale,
-    )

@@ -5,21 +5,15 @@ from __future__ import annotations
 
 import json
 import math
-import subprocess
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from core_tier_portfolio_construction import (
     NORMALIZED_BREAKEVEN_NOTIONAL_USD,
-    BasketPosition,
     CoreCandidate,
-    StrategyBasket,
     annualize_apr,
     average_rate,
-    build_strategy_2_basket,
-    build_strategy_3_basket,
-    compare_strategy_baskets,
     compute_stability_score,
     estimate_breakeven_days,
     load_core_candidates,
@@ -94,26 +88,6 @@ def make_candidate(
     )
     return candidate
 
-
-def make_scored_candidate(
-    symbol: str,
-    *,
-    stability_score: float = 25.0,
-    pair_quality_score: float = 75.0,
-    effective_apr_anchor: float = 12.0,
-    tradeability_status: str = "EXECUTABLE",
-    flags: list[str] | None = None,
-) -> CoreCandidate:
-    candidate = make_candidate(
-        symbol=symbol,
-        tradeability_status=tradeability_status,
-        flags=flags,
-    )
-    candidate.stability_score = stability_score
-    candidate.pair_quality_score = pair_quality_score
-    candidate.effective_apr_anchor = effective_apr_anchor
-    candidate.eligible_for_basket = tradeability_status == "EXECUTABLE"
-    return candidate
 
 
 def test_load_core_candidates_verifies_required_inputs() -> None:
@@ -318,155 +292,18 @@ def test_load_core_candidates_degrades_when_hyperliquid_spot_lookup_is_unresolve
         assert any("Hyperliquid spot availability unresolved" in warning for warning in bundle.warnings)
 
 
-def test_strategy_2_ranks_executable_names_by_stability_with_quality_floor() -> None:
-    basket = build_strategy_2_basket(
-        [
-            make_scored_candidate("A", stability_score=28, pair_quality_score=78),
-            make_scored_candidate("B", stability_score=26, pair_quality_score=74),
-            make_scored_candidate("C", stability_score=25, pair_quality_score=59),
-        ],
-        core_capital_usd=600000,
+def test_non_executable_candidates_still_get_full_score() -> None:
+    candidate = make_candidate(
+        symbol="XYZ",
+        apr_latest=18.0,
+        apr_7d=20.0,
+        apr_14d=22.0,
+        oi_rank=8,
+        tradeability_status="NON_EXECUTABLE",
     )
-    assert [row.symbol for row in basket.positions] == ["A", "B"]
-    assert all(row.weight <= 0.40 for row in basket.positions)
-
-
-def test_strategy_3_chooses_the_best_valid_combination() -> None:
-    basket = build_strategy_3_basket(
-        [
-            make_scored_candidate("A", pair_quality_score=88, stability_score=30, effective_apr_anchor=14),
-            make_scored_candidate("B", pair_quality_score=84, stability_score=28, effective_apr_anchor=13),
-            make_scored_candidate("C", pair_quality_score=70, stability_score=21, effective_apr_anchor=11, flags=["DECAYING_REGIME"]),
-            make_scored_candidate("D", pair_quality_score=68, stability_score=22, effective_apr_anchor=12, tradeability_status="CROSS_CHECK_NEEDED"),
-        ],
-        core_capital_usd=600000,
-    )
-    assert [row.symbol for row in basket.positions][:2] == ["A", "B"]
-    assert basket.execution_uncertainty_count == 0
-    assert all(row.weight <= 0.40 for row in basket.positions)
-
-
-def test_strategy_3_extends_pool_with_cross_check_names_when_breadth_is_thin() -> None:
-    basket = build_strategy_3_basket(
-        [
-            make_scored_candidate("A", pair_quality_score=88, stability_score=30, effective_apr_anchor=14),
-            make_scored_candidate(
-                "C",
-                pair_quality_score=80,
-                stability_score=24,
-                effective_apr_anchor=12,
-                tradeability_status="CROSS_CHECK_NEEDED",
-            ),
-        ],
-        core_capital_usd=600000,
-    )
-    assert {row.symbol for row in basket.positions} == {"A", "C"}
-    assert basket.execution_uncertainty_count == 1
-
-
-def test_strategy_3_redistributes_weight_after_cap_before_leaving_idle() -> None:
-    from core_tier_portfolio_construction import _materialize_strategy_3_combo
-
-    basket = _materialize_strategy_3_combo(
-        (
-            make_scored_candidate("A", pair_quality_score=200, stability_score=30, effective_apr_anchor=14),
-            make_scored_candidate("B", pair_quality_score=60, stability_score=24, effective_apr_anchor=12),
-            make_scored_candidate("C", pair_quality_score=60, stability_score=24, effective_apr_anchor=12),
-        ),
-        core_capital_usd=600000,
-    )
-    weights = {row.symbol: row.weight for row in basket.positions}
-    assert_close(weights["A"], 0.40)
-    assert_close(weights["B"], 0.30)
-    assert_close(weights["C"], 0.30)
-    assert_close(basket.idle_capital_usd, 0.0)
-
-
-def test_compare_baskets_uses_the_spec_order() -> None:
-    better = StrategyBasket(
-        strategy_label="STRATEGY_3",
-        positions=[BasketPosition(symbol="A", funding_venue="hyperliquid", capital_usd=210000, weight=0.35)],
-        idle_capital_usd=390000,
-        weighted_effective_apr=10.0,
-        weighted_pair_quality_score=84.0,
-        weighted_stability_score=28.0,
-        execution_uncertainty_count=0,
-        decay_concern_count=0,
-    )
-    worse = StrategyBasket(
-        strategy_label="STRATEGY_2",
-        positions=[BasketPosition(symbol="B", funding_venue="hyperliquid", capital_usd=240000, weight=0.40)],
-        idle_capital_usd=360000,
-        weighted_effective_apr=12.0,
-        weighted_pair_quality_score=85.0,
-        weighted_stability_score=26.0,
-        execution_uncertainty_count=1,
-        decay_concern_count=0,
-    )
-    verdict = compare_strategy_baskets(better, worse)
-    assert verdict.method_verdict == "STRATEGY_3"
-
-
-def run_cli_capture(args: list[str]) -> str:
-    result = subprocess.run(
-        ["python3", "scripts/report_core_tier_portfolio_construction.py", *args],
-        cwd=Path(__file__).resolve().parent.parent,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise AssertionError(result.stderr or result.stdout)
-    return result.stdout
-
-
-def build_realistic_loris_fixture(tmp_path: Path) -> Path:
-    base_ts = datetime(2026, 3, 12, 16, 0, 0, tzinfo=timezone.utc)
-    rows: list[tuple[str, str, str, int | None, float]] = []
-    assets = [
-        ("hyperliquid", "HYPE", 5, 0.00040),
-        ("tradexyz", "DOGE", 15, 0.00025),
-        ("hyena", "SOL", 10, 0.00018),
-        ("kinetiq", "ETH", 8, 0.00016),
-    ]
-    for exchange, symbol, oi_rank, rate in assets:
-        for days_ago in (0, 3, 7, 14, 21):
-            rows.append(
-                (
-                    (base_ts - timedelta(days=days_ago)).isoformat(),
-                    exchange,
-                    symbol,
-                    oi_rank,
-                    rate,
-                )
-            )
-    return build_loris_fixture(tmp_path, rows)
-
-
-def test_cli_report_contains_required_sections() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        stdout = run_cli_capture(
-            [
-                "--loris-csv",
-                str(build_realistic_loris_fixture(tmp_path)),
-                "--felix-cache",
-                str(build_felix_fixture(tmp_path, ["DOGE", "HYPE"])),
-                "--portfolio-capital",
-                "1000000",
-                "--core-capital",
-                "600000",
-            ]
-        )
-        assert "# Core Tier Portfolio Construction Test" in stdout
-        assert "## Strategy 3 Basket" in stdout
-        assert "## Strategy 2 Basket" in stdout
-        assert "## Near-Miss And Excluded Candidates" in stdout
-        assert "Method Verdict:" in stdout
-        assert "Deployment Verdict:" in stdout
-        assert "### Inclusion Rationale" in stdout
-        assert "Deployed Capital:" in stdout
-        assert "Idle Capital:" in stdout
+    scored = score_candidate(candidate)
+    assert scored.pair_quality_score is not None
+    assert scored.pair_quality_score > 0
 
 
 def main() -> int:

@@ -118,6 +118,12 @@ Delivery rules:
 - If one required section hard-fails, still send a partial report with the remaining sections and clearly name the failed section in the header.
 - Do not improvise legacy sections such as `Quick take`, `High APR but unstable`, `Action list`, or a daily `Rotation Cost Analysis` block unless Bean explicitly asks for them.
 
+### On-demand Core Tier Construction Test
+
+Use `scripts/report_core_tier_portfolio_construction.py` when evaluating whether the current market supports Core deployment quality for a future HIP3-style vault.
+This path compares `Strategy 3` vs `Strategy 2`, models executable vs cross-check-needed names explicitly, and may recommend partial deployment or no deployment.
+Treat it as advisory analysis only; never interpret the output as approval to auto-execute.
+
 ### Step F - Deliver
 
 Send the final report to Telegram at `09:00` Asia/Ho_Chi_Minh.

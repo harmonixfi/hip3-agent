@@ -142,6 +142,20 @@ CLI notes:
 - Failure mode: can hide nuance if used as the only decision layer.
 - Safe for routine runs: **yes, with review**
 
+### `scripts/report_core_tier_portfolio_construction.py`
+- Purpose: compare Strategy 3 vs Strategy 2 for Core-tier construction using current funding data.
+- Inputs: `data/loris_funding_history.csv`, `data/felix_equities_cache.json`, `config/fees.json`
+- Output: human-readable Core basket recommendation plus method/deployment verdicts.
+- Preconditions: funding history exists; spot availability is modeled from current Felix cache plus any explicit Hyperliquid spot inputs wired into the runtime.
+- Failure mode: degraded input state or unresolved spot mapping can leave the basket empty; this is advisory-only and must not be treated as an execution command.
+- Safe for routine runs: **yes**
+
+On-demand command:
+
+```bash
+.venv/bin/python scripts/report_core_tier_portfolio_construction.py --portfolio-capital 1000000 --core-capital 600000
+```
+
 ---
 
 ## 6) Delivery

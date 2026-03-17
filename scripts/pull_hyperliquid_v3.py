@@ -20,7 +20,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from tracking.connectors import hyperliquid_public
-from tracking.writers.hyperliquid_v3_writer import connect, upsert_instruments, insert_prices, insert_funding
+from tracking.writers.hyperliquid_v3_writer import connect, upsert_instruments, upsert_spot_instruments, insert_prices, insert_funding
 
 DEFAULT_DB = ROOT / "tracking" / "db" / "arbit_v3.db"
 
@@ -34,10 +34,13 @@ def main() -> int:
 
     ts = int(time.time() * 1000)
 
-    # Get instruments
+    # Get perp instruments
     all_insts = hyperliquid_public.get_instruments()
     # Limit to avoid timeout
     insts = all_insts[:args.inst_limit] if args.inst_limit > 0 else all_insts
+
+    # Get spot instruments
+    spot_insts = hyperliquid_public.get_spot_instruments()
 
     # Get mark prices
     mark_prices = hyperliquid_public.get_mark_prices()
@@ -93,15 +96,27 @@ def main() -> int:
     # Limit funding
     funding_rows = funding_rows[:args.funding_limit] if args.funding_limit > 0 else funding_rows
 
+    # Prepare spot instrument rows
+    spot_inst_rows = []
+    for inst in spot_insts:
+        spot_inst_rows.append({
+            "symbol": inst["symbol"],
+            "pair_name": inst.get("pair_name", ""),
+            "quote": inst.get("quote", "USDC"),
+            "szDecimals": inst.get("szDecimals", 0),
+            "isCanonical": inst.get("isCanonical", False),
+        })
+
     # Write to DB
     con = connect(args.db)
     try:
         n_inst = upsert_instruments(con, inst_rows)
+        n_spot = upsert_spot_instruments(con, spot_inst_rows)
         n_price = insert_prices(con, price_rows)
         n_funding = insert_funding(con, funding_rows)
         con.commit()
 
-        print(f"Hyperliquid v3: {n_inst} instruments, {n_price} prices, {n_funding} funding records")
+        print(f"Hyperliquid v3: {n_inst} perp instruments, {n_spot} spot instruments, {n_price} prices, {n_funding} funding records")
         return 0
     except Exception as e:
         con.rollback()

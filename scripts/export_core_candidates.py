@@ -64,6 +64,8 @@ COLUMNS = [
     ("oi_rank",      7),
     ("be_days",      7),
     ("APR_lat",      8),
+    ("APR1d",        8),
+    ("APR3d",        8),
     ("APR7",         8),
     ("APR14",        8),
     ("flags",        45),
@@ -98,9 +100,11 @@ def _candidate_row(c: CoreCandidate) -> str:
         _fmt(str(c.oi_rank) if c.oi_rank is not None else "-", COLUMNS[5][1]),
         _fmt(_format_float(c.breakeven_estimate_days, ".1f"), COLUMNS[6][1]),
         _fmt(_format_float(c.apr_latest, ".1f"), COLUMNS[7][1]),
-        _fmt(_format_float(c.apr_7d, ".1f"), COLUMNS[8][1]),
-        _fmt(_format_float(c.apr_14d, ".1f"), COLUMNS[9][1]),
-        _fmt("|".join(c.flags) if c.flags else "", COLUMNS[10][1]),
+        _fmt(_format_float(c.apr_1d, ".1f"), COLUMNS[8][1]),
+        _fmt(_format_float(c.apr_3d, ".1f"), COLUMNS[9][1]),
+        _fmt(_format_float(c.apr_7d, ".1f"), COLUMNS[10][1]),
+        _fmt(_format_float(c.apr_14d, ".1f"), COLUMNS[11][1]),
+        _fmt("|".join(c.flags) if c.flags else "", COLUMNS[12][1]),
     ]
     return "  ".join(cells)
 
@@ -155,7 +159,7 @@ CSV_FIELDS = [
     "symbol", "funding_venue", "tradeability_status",
     "pair_quality_score", "stability_score", "effective_apr_anchor",
     "oi_rank", "breakeven_estimate_days",
-    "apr_latest", "apr_7d", "apr_14d",
+    "apr_latest", "apr_1d", "apr_3d", "apr_7d", "apr_14d",
     "spot_on_hyperliquid", "spot_on_felix",
     "freshness_hours", "flags",
 ]
@@ -176,6 +180,8 @@ def _export_csv(path: Path, candidates: list[CoreCandidate], snapshot: str) -> N
                 "oi_rank": c.oi_rank if c.oi_rank is not None else "",
                 "breakeven_estimate_days": _format_float(c.breakeven_estimate_days, ".1f"),
                 "apr_latest": _format_float(c.apr_latest, ".2f"),
+                "apr_1d": _format_float(c.apr_1d, ".2f"),
+                "apr_3d": _format_float(c.apr_3d, ".2f"),
                 "apr_7d": _format_float(c.apr_7d, ".2f"),
                 "apr_14d": _format_float(c.apr_14d, ".2f"),
                 "spot_on_hyperliquid": c.spot_on_hyperliquid,

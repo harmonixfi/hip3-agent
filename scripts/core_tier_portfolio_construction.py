@@ -38,6 +38,8 @@ class CoreCandidate:
     funding_venue: str
     latest_ts: datetime
     apr_latest: float | None
+    apr_1d: float | None
+    apr_3d: float | None
     apr_7d: float | None
     apr_14d: float | None
     apr_30d: float | None
@@ -375,6 +377,10 @@ def load_core_candidates(
         apr_7d = annualize_apr(avg_7d) if avg_7d is not None and len(samples) >= 2 else None
         apr_14d = annualize_apr(avg_14d) if avg_14d is not None and (latest_ts - samples[0][0]).total_seconds() >= 14 * 86400 else None
         apr_30d = annualize_apr(avg_30d) if avg_30d is not None and (latest_ts - samples[0][0]).total_seconds() >= 30 * 86400 else None
+        avg_1d = average_rate([(ts, rate) for ts, rate, _ in samples], latest_ts - timedelta(days=1))
+        avg_3d = average_rate([(ts, rate) for ts, rate, _ in samples], latest_ts - timedelta(days=3))
+        apr_1d = annualize_apr(avg_1d) if avg_1d is not None and len(samples) >= 2 else None
+        apr_3d = annualize_apr(avg_3d) if avg_3d is not None and len(samples) >= 2 else None
 
         spot_on_hyperliquid = symbol in spot_symbols
         spot_on_felix = symbol in felix_symbols
@@ -399,6 +405,8 @@ def load_core_candidates(
             funding_venue=venue,
             latest_ts=latest_ts,
             apr_latest=apr_latest,
+            apr_1d=apr_1d,
+            apr_3d=apr_3d,
             apr_7d=apr_7d,
             apr_14d=apr_14d,
             apr_30d=apr_30d,

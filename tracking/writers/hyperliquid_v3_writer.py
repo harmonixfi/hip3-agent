@@ -5,7 +5,7 @@ Writes:
 - prices_v3 (INSERT OR IGNORE on PK)
 - funding_v3 (INSERT OR IGNORE on PK)
 
-Note: Hyperliquid instruments are perps only.
+Supports both PERP and SPOT instruments.
 """
 
 from __future__ import annotations
@@ -60,6 +60,50 @@ def upsert_instruments(con: sqlite3.Connection, inst_rows: List[Dict]) -> int:
                 r.get("status", "OPEN"),
                 now_ms,  # created_at_ms
                 now_ms,  # updated_at_ms
+            )
+        )
+    con.executemany(sql, vals)
+    return len(vals)
+
+
+def upsert_spot_instruments(con: sqlite3.Connection, inst_rows: List[Dict]) -> int:
+    """Insert or update Hyperliquid spot instruments."""
+    sql = """
+    INSERT OR REPLACE INTO instruments_v3(
+      venue, inst_id, base, quote, contract_type, symbol_key, symbol_base,
+      raw_symbol, specs_json, status, created_at_ms, updated_at_ms
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+    now_ms = int(time.time() * 1000)
+    vals = []
+    for r in inst_rows:
+        base = r["symbol"]
+        quote = r.get("quote", "USDC")
+        pair_name = r.get("pair_name", f"{base}/{quote}")
+
+        symbol_key = f"{base}:{quote}"
+        symbol_base = base
+
+        specs = {
+            "szDecimals": r.get("szDecimals", 0),
+            "isCanonical": r.get("isCanonical", False),
+            "pairName": pair_name,
+        }
+
+        vals.append(
+            (
+                "hyperliquid",
+                f"SPOT:{base}",  # Prefix to avoid PK collision with perps
+                base,
+                quote,
+                "SPOT",
+                symbol_key,
+                symbol_base,
+                pair_name,
+                json.dumps(specs, separators=(",", ":"), sort_keys=True),
+                "OPEN",
+                now_ms,
+                now_ms,
             )
         )
     con.executemany(sql, vals)

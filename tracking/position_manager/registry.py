@@ -30,6 +30,7 @@ class LegConfig:
     leverage: Optional[float] = None
     margin_mode: Optional[str] = None
     collateral: Optional[float] = None
+    wallet_label: Optional[str] = None
 
     def validate(self) -> List[str]:
         """Validate leg configuration. Returns list of error messages (empty if valid)."""
@@ -179,6 +180,7 @@ def parse_position(data: Dict[str, Any]) -> PositionConfig:
             leverage=leg_data.get("leverage"),
             margin_mode=leg_data.get("margin_mode"),
             collateral=leg_data.get("collateral"),
+            wallet_label=leg_data.get("wallet_label"),
         )
         legs.append(leg)
 

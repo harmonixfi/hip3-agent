@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS pm_legs (
   closed_at_ms INTEGER,
   raw_json TEXT,              -- Original API response JSON
   meta_json TEXT,             -- Metadata JSON
+  account_id TEXT,            -- Wallet/account identifier for multi-wallet support
   PRIMARY KEY (leg_id),
   FOREIGN KEY (position_id) REFERENCES pm_positions(position_id)
 );
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS pm_leg_snapshots (
   realized_pnl REAL,
   raw_json TEXT,              -- Full snapshot JSON
   meta_json TEXT,             -- Metadata JSON
+  account_id TEXT,            -- Wallet/account identifier for multi-wallet support
   FOREIGN KEY (leg_id) REFERENCES pm_legs(leg_id),
   FOREIGN KEY (position_id) REFERENCES pm_positions(position_id)
 );
@@ -70,6 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_leg_id ON pm_leg_snapshots(leg_i
 CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_position_id ON pm_leg_snapshots(position_id);
 CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_ts ON pm_leg_snapshots(ts);
 CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_venue ON pm_leg_snapshots(venue);
+CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_account ON pm_leg_snapshots(account_id, leg_id);
 
 -- Account Snapshots: append-only account state snapshots
 CREATE TABLE IF NOT EXISTS pm_account_snapshots (

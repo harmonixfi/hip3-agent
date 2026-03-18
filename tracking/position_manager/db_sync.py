@@ -21,6 +21,23 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return con
 
 
+def ensure_multi_wallet_columns(con: sqlite3.Connection) -> None:
+    """Add account_id columns to pm_legs and pm_leg_snapshots if missing."""
+    for table in ("pm_legs", "pm_leg_snapshots"):
+        try:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN account_id TEXT")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+    try:
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_account "
+            "ON pm_leg_snapshots(account_id, leg_id)"
+        )
+    except sqlite3.OperationalError:
+        pass
+    con.commit()
+
+
 def sync_registry(con: sqlite3.Connection, positions: List[PositionConfig], delete_missing: bool = False) -> int:
     """
     Sync position configurations to database.

@@ -206,24 +206,37 @@ def main() -> int:
 
     # 5) Wallet/account mismatch checks (common footgun)
     # If you change wallet addresses but keep old auth tokens, monitoring silently points to the old account.
-    try:
-        expected_pdx = (os.environ.get("PARADEX_ACCOUNT_ADDRESS") or "").strip().lower()
-        if expected_pdx and (os.environ.get("PARADEX_JWT") or os.environ.get("PARADEX_READONLY_TOKEN")):
-            from tracking.connectors.paradex_private import ParadexPrivateConnector
-
-            pdx = ParadexPrivateConnector()
-            acct = (pdx.fetch_account_snapshot() or {}).get("account_id")
-            acct_l = str(acct or "").strip().lower()
-            if acct_l and acct_l != expected_pdx:
-                findings.append(
-                    Finding(
+    # --- Multi-wallet mismatch checks ---
+    from tracking.position_manager.accounts import resolve_venue_accounts
+    from tracking.position_manager.puller import CONNECTORS
+    for check_venue in ["paradex", "hyperliquid", "hyena", "ethereal", "lighter"]:
+        accounts = resolve_venue_accounts(check_venue)
+        if not accounts:
+            continue
+        for wallet_label, expected_addr in accounts.items():
+            if not expected_addr:
+                continue
+            try:
+                connector_class = CONNECTORS.get(check_venue)
+                if not connector_class:
+                    continue
+                kwargs = {}
+                if check_venue in ("hyperliquid", "hyena", "ethereal", "lighter"):
+                    kwargs["address"] = expected_addr
+                elif check_venue == "paradex":
+                    kwargs["account_address"] = expected_addr
+                connector = connector_class(**kwargs)
+                snap = connector.fetch_account_snapshot() or {}
+                actual = str(snap.get("account_id") or "").strip().lower()
+                expected_lower = expected_addr.strip().lower()
+                if actual and actual != expected_lower:
+                    findings.append(Finding(
                         "WARN",
-                        "paradex_wallet_mismatch",
-                        f"token_account={acct} != env PARADEX_ACCOUNT_ADDRESS={expected_pdx} (update PARADEX_JWT for new wallet)",
-                    )
-                )
-    except Exception:
-        pass
+                        f"{check_venue}_wallet_mismatch",
+                        f"[{wallet_label}] actual={actual} != expected={expected_lower}"
+                    ))
+            except Exception:
+                pass  # Skip if connector fails
 
     if args.json:
         print(

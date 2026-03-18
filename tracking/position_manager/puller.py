@@ -325,6 +325,7 @@ def run_pull(
             print("Loading positions from database")
         con0 = connect(db_path)
         try:
+            ensure_multi_wallet_columns(con0)
             positions = load_positions_from_db(con0, venues_set)
         finally:
             con0.close()

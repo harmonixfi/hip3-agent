@@ -131,10 +131,14 @@ CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_account ON pm_leg_snapshots(acco
 **Key decision**: Option C — partition legs by wallet_label first, then match `(inst_id, side)` within each partition. No change to core matching logic.
 
 **Functions requiring update in `puller.py`**:
+- `pull_venue_positions()`: Currently instantiates connector with no args (`connector_class()`). Must accept credential override or be replaced by direct instantiation in the multi-wallet loop within `run_pull()`.
+- `run_pull()`: Main orchestrator — restructure to iterate `(wallet_label, credential)` pairs per venue. The matching logic (building `idx` dict keyed by `(inst_id, side)`) must be scoped to a wallet partition.
 - `load_positions_from_db()`: SELECT must include `account_id` from `pm_legs` and extract `wallet_label` from `meta_json`
 - `load_positions_from_registry()`: Must propagate `wallet_label` from `LegConfig` into leg dicts
 - `write_leg_snapshots()`: INSERT must include `account_id` column
 - `map_venue_to_managed()`: Accept wallet-partitioned legs only (caller partitions)
+
+**`account_id` population timing**: During `sync_registry()`, only `wallet_label` is known (from config) — the resolved address is not yet available. `wallet_label` is written to `meta_json` during sync. The `account_id` column on `pm_legs` is populated later during the pull cycle, when `wallet_label` is resolved to an address via `{VENUE}_ACCOUNTS_JSON`. On first pull after registry sync, `account_id` transitions from NULL to the resolved address.
 
 ### 6. DB Sync Changes
 
@@ -150,6 +154,9 @@ CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_account ON pm_leg_snapshots(acco
 
 **`scripts/pm_cashflows.py`**:
 - Currently instantiates one connector per venue (same single-wallet problem as puller). Must adopt the same multi-wallet loop: for each `(wallet_label, credential)`, instantiate connector with override, ingest funding/cashflows for that wallet, match to correct managed legs via `account_id`.
+- **Refactoring approach**: The multi-wallet loop goes in `cmd_ingest()` (the orchestrator). Each per-venue ingest function (`ingest_paradex`, `ingest_ethereal`, `ingest_hyperliquid`, `ingest_lighter`, `ingest_okx`) must accept an explicit connector instance (with credential override) and `account_id` parameter, rather than instantiating its own connector.
+- **`_load_hyperliquid_targets()`**: Currently groups targets by `(dex, coin)` — with multi-wallet, two legs on different wallets can share this key. Must include `account_id` in the grouping key.
+- **State file (`pm_cashflow_state.json`)**: Lighter's state key uses `f"{inst_id}:{side}"` which would collide across wallets. Must include `account_id` in the state key for Lighter (and any other venue using `(inst_id, side)` as state key). Paradex already includes `account_id` in its key; Hyperliquid uses time windows (no collision).
 
 ### 8. Reporting, Healthcheck & Logging
 

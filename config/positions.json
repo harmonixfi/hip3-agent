@@ -3,7 +3,7 @@
     "position_id": "pos_xyz_GOOGL",
     "strategy_type": "SPOT_PERP",
     "base": "GOOGL",
-    "status": "OPEN",
+    "status": "CLOSED",
     "amount_usd": 1862.00,
     "legs": [
       {
@@ -12,7 +12,8 @@
         "inst_id": "GOOGL",
         "side": "LONG",
         "qty": 3.0,
-        "qty_type": "token"
+        "qty_type": "token",
+        "wallet_label": "main"
       },
       {
         "leg_id": "pos_xyz_GOOGL_PERP",
@@ -20,7 +21,8 @@
         "inst_id": "xyz:GOOGL",
         "side": "SHORT",
         "qty": 3.0,
-        "qty_type": "token"
+        "qty_type": "token",
+        "wallet_label": "main"
       }
     ]
   },
@@ -28,7 +30,7 @@
     "position_id": "pos_xyz_MSFT",
     "strategy_type": "SPOT_PERP",
     "base": "MSFT",
-    "status": "OPEN",
+    "status": "CLOSED",
     "amount_usd": 4036.96,
     "legs": [
       {
@@ -37,7 +39,8 @@
         "inst_id": "MSFT",
         "side": "LONG",
         "qty": 5.2,
-        "qty_type": "token"
+        "qty_type": "token",
+        "wallet_label": "main"
       },
       {
         "leg_id": "pos_xyz_MSFT_PERP",
@@ -45,7 +48,8 @@
         "inst_id": "xyz:MSFT",
         "side": "SHORT",
         "qty": 5.2,
-        "qty_type": "token"
+        "qty_type": "token",
+        "wallet_label": "main"
       }
     ]
   },
@@ -53,7 +57,7 @@
     "position_id": "pos_xyz_NVDA",
     "strategy_type": "SPOT_PERP",
     "base": "NVDA",
-    "status": "OPEN",
+    "status": "CLOSED",
     "amount_usd": 3807.80,
     "legs": [
       {
@@ -62,7 +66,8 @@
         "inst_id": "NVDA",
         "side": "LONG",
         "qty": 10.0,
-        "qty_type": "token"
+        "qty_type": "token",
+        "wallet_label": "main"
       },
       {
         "leg_id": "pos_xyz_NVDA_PERP",
@@ -70,7 +75,86 @@
         "inst_id": "xyz:NVDA",
         "side": "SHORT",
         "qty": 10.0,
-        "qty_type": "token"
+        "qty_type": "token",
+        "wallet_label": "main"
+      }
+    ]
+  },
+  {
+    "position_id": "pos_xyz_ORCL",
+    "strategy_type": "SPOT_PERP",
+    "base": "ORCL",
+    "status": "OPEN",
+    "legs": [
+      {
+        "leg_id": "pos_xyz_ORCL_SPOT",
+        "venue": "hyperliquid",
+        "inst_id": "ORCL",
+        "side": "LONG",
+        "qty": 55.774,
+        "qty_type": "token",
+        "wallet_label": "main"
+      },
+      {
+        "leg_id": "pos_xyz_ORCL_PERP",
+        "venue": "hyperliquid",
+        "inst_id": "xyz:ORCL",
+        "side": "SHORT",
+        "qty": 55.774,
+        "qty_type": "token",
+        "wallet_label": "main"
+      }
+    ]
+  },
+  {
+    "position_id": "pos_xyz_MU",
+    "strategy_type": "SPOT_PERP",
+    "base": "MU",
+    "status": "OPEN",
+    "legs": [
+      {
+        "leg_id": "pos_xyz_MU_SPOT",
+        "venue": "hyperliquid",
+        "inst_id": "MU",
+        "side": "LONG",
+        "qty": 6.567,
+        "qty_type": "token",
+        "wallet_label": "main"
+      },
+      {
+        "leg_id": "pos_xyz_MU_PERP",
+        "venue": "hyperliquid",
+        "inst_id": "xyz:MU",
+        "side": "SHORT",
+        "qty": 6.567,
+        "qty_type": "token",
+        "wallet_label": "main"
+      }
+    ]
+  },
+  {
+    "position_id": "pos_xyz_CRCL",
+    "strategy_type": "SPOT_PERP",
+    "base": "CRCL",
+    "status": "OPEN",
+    "legs": [
+      {
+        "leg_id": "pos_xyz_CRCL_SPOT",
+        "venue": "hyperliquid",
+        "inst_id": "CRCL",
+        "side": "LONG",
+        "qty": 15.504,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      },
+      {
+        "leg_id": "pos_xyz_CRCL_PERP",
+        "venue": "hyperliquid",
+        "inst_id": "xyz:CRCL",
+        "side": "SHORT",
+        "qty": 15.504,
+        "qty_type": "token",
+        "wallet_label": "alt"
       }
     ]
   },

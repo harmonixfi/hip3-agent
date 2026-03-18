@@ -91,7 +91,7 @@ ALTER TABLE pm_leg_snapshots ADD COLUMN account_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_account ON pm_leg_snapshots(account_id, leg_id);
 ```
 
-**Migration**: Auto-migrate with `try/except` for "column already exists" — run in puller or db_sync entry point.
+**Migration**: Auto-migrate with `try/except` for "column already exists". Place migration logic in a shared utility (e.g., `db_sync.py` helper function) so both `puller.py` and `pm_cashflows.py` can call it from their entry points without duplication.
 
 **No changes** to `pm_positions` (positions span wallets via legs), `pm_account_snapshots` (already has `account_id`), `pm_cashflows` (already has `account_id`).
 
@@ -99,10 +99,13 @@ CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_account ON pm_leg_snapshots(acco
 
 **Base class** (`private_base.py`): Add optional address/credential override parameter to `__init__`.
 
-**Per connector**:
+**All registered connectors** must accept credential override:
 - `hyperliquid_private.py`: Accept `address` param → override `self.address` (skip env lookup when provided)
 - `paradex_private.py`: Accept `account_address` and/or `jwt` param override
-- Future connectors follow the same pattern
+- `ethereal_private.py`: Accept `address` override
+- `hyena_private.py`: Accept `address` override
+- `lighter_private.py`: Accept `address` override
+- `okx_private.py`: Accept API key/credential overrides
 
 **Backward compat**: When no override passed, read from env as before.
 
@@ -114,26 +117,41 @@ CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_account ON pm_leg_snapshots(acco
 
 1. For each venue in `--venues`:
    - Resolve accounts dict via `{VENUE}_ACCOUNTS_JSON` or legacy fallback → `{"main": "0xabc", "alt": "0xdef"}`
-   - Load managed legs from DB
+   - Load managed legs from DB (must read `wallet_label` from `meta_json` and `account_id` from column)
 2. **For each (wallet_label, credential)**:
    - Instantiate connector with explicit credential override
    - `fetch_account_snapshot()` → write `pm_account_snapshots` (already works)
    - `fetch_open_positions()` → get venue positions for this wallet
    - **Partition**: Filter managed legs to only those with matching `wallet_label`
    - **Match**: Within partition, use existing `(inst_id, side)` logic
-   - Write `pm_leg_snapshots` with `account_id` = resolved address
+   - `write_leg_snapshots()`: Include `account_id` in the INSERT statement
    - Best-effort update `pm_legs` with current state + `account_id`
 3. Legs with no `wallet_label` → default to `"main"`
 
 **Key decision**: Option C — partition legs by wallet_label first, then match `(inst_id, side)` within each partition. No change to core matching logic.
 
+**Functions requiring update in `puller.py`**:
+- `load_positions_from_db()`: SELECT must include `account_id` from `pm_legs` and extract `wallet_label` from `meta_json`
+- `load_positions_from_registry()`: Must propagate `wallet_label` from `LegConfig` into leg dicts
+- `write_leg_snapshots()`: INSERT must include `account_id` column
+- `map_venue_to_managed()`: Accept wallet-partitioned legs only (caller partitions)
+
 ### 6. DB Sync Changes
 
 - `upsert_leg()`: Write `account_id` (resolved address) to new `pm_legs.account_id` column
 - Store `wallet_label` in `meta_json` for reference/display
+- `list_positions()`: Include `account_id` in SELECT and output dict
 - Resolution (`wallet_label` → address) happens in puller before calling db_sync
 
-### 7. Reporting, Healthcheck & Logging
+### 7. Cashflows Changes
+
+**`tracking/position_manager/cashflows.py`**:
+- `load_managed_leg_index()` currently keys by `(venue, inst_id, side)` — with multi-wallet, two legs can share this key. Must extend key to `(venue, account_id, inst_id, side)`.
+
+**`scripts/pm_cashflows.py`**:
+- Currently instantiates one connector per venue (same single-wallet problem as puller). Must adopt the same multi-wallet loop: for each `(wallet_label, credential)`, instantiate connector with override, ingest funding/cashflows for that wallet, match to correct managed legs via `account_id`.
+
+### 8. Reporting, Healthcheck & Logging
 
 **Reporting** (`report_daily_funding_with_portfolio.py`):
 - Queries are additive — `account_id` column doesn't break existing joins
@@ -141,7 +159,7 @@ CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_account ON pm_leg_snapshots(acco
 - Pre-migration NULL `account_id` treated as legacy, no breakage
 
 **Healthcheck** (`pm_healthcheck.py`):
-- Extend wallet mismatch check to iterate all accounts in `{VENUE}_ACCOUNTS_JSON`
+- Extend wallet mismatch check to iterate all accounts in `{VENUE}_ACCOUNTS_JSON` for all venues (currently only Paradex is checked)
 - Missing snapshot detection fixes itself — puller now pulls all wallets
 
 **Carry & Risk** (`carry.py`, `risk.py`):
@@ -153,18 +171,29 @@ CREATE INDEX IF NOT EXISTS idx_pm_leg_snapshots_account ON pm_leg_snapshots(acco
 
 ---
 
+## Naming Conventions
+
+- **`wallet_label`**: Human-friendly key (e.g., `"main"`, `"alt"`) — used in config, logging, Discord messages, and stored in `meta_json`.
+- **`account_id`**: Resolved address/credential — stored in dedicated DB columns for querying. Never displayed in user-facing logs.
+
 ## Files to Change
 
 | File | Change |
 |------|--------|
-| `tracking/position_manager/registry.py` | Add `wallet_label` to `LegConfig` |
-| `tracking/position_manager/db_sync.py` | Write `account_id` + `wallet_label` in meta_json on upsert |
-| `tracking/position_manager/puller.py` | Multi-wallet loop, partition-then-match, account_id in snapshots |
+| `tracking/position_manager/registry.py` | Add `wallet_label` to `LegConfig`; update `parse_position()` to read it |
+| `tracking/position_manager/db_sync.py` | Write `account_id` column + `wallet_label` in meta_json; update `list_positions()` to include `account_id`; add shared migration helper |
+| `tracking/position_manager/puller.py` | Multi-wallet loop, partition-then-match, `account_id` in leg snapshots; update `load_positions_from_db()`, `load_positions_from_registry()`, `write_leg_snapshots()` |
+| `tracking/position_manager/cashflows.py` | Update `load_managed_leg_index()` key to include `account_id` |
+| `scripts/pm_cashflows.py` | Multi-wallet connector loop (same pattern as puller) |
 | `tracking/connectors/private_base.py` | Optional credential override in base `__init__` |
 | `tracking/connectors/hyperliquid_private.py` | Accept `address` override param |
 | `tracking/connectors/paradex_private.py` | Accept credential override params |
+| `tracking/connectors/ethereal_private.py` | Accept `address` override param |
+| `tracking/connectors/hyena_private.py` | Accept `address` override param |
+| `tracking/connectors/lighter_private.py` | Accept `address` override param |
+| `tracking/connectors/okx_private.py` | Accept API key/credential overrides |
 | `tracking/sql/schema_pm_v3.sql` | Add `account_id` columns + index (reference) |
-| `scripts/pm_healthcheck.py` | Multi-wallet mismatch checks |
+| `scripts/pm_healthcheck.py` | Multi-wallet mismatch checks for all venues |
 | `scripts/report_daily_funding_with_portfolio.py` | Ensure queries handle `account_id` gracefully |
 
 ---

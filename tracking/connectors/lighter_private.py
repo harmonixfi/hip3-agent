@@ -146,18 +146,19 @@ def _last_trade_price(market_id: int) -> Optional[float]:
 class LighterPrivateConnector(PrivateConnectorBase):
     """Connector for Lighter that fetches perp positions and spot balances."""
 
-    def __init__(self):
+    def __init__(self, *, address: Optional[str] = None):
         super().__init__("lighter")
-        self.l1_address = (os.environ.get("LIGHTER_L1_ADDRESS") or os.environ.get("ETHEREAL_ACCOUNT_ADDRESS") or "").strip()
+        self.l1_address = (
+            address
+            or os.environ.get("LIGHTER_L1_ADDRESS")
+            or os.environ.get("ETHEREAL_ACCOUNT_ADDRESS")
+            or ""
+        ).strip()
         if not self.l1_address:
             raise RuntimeError(
                 "Lighter credentials missing. Set LIGHTER_L1_ADDRESS or (fallback) ETHEREAL_ACCOUNT_ADDRESS."
             )
-
-        # Readonly token for funding API (set via environment)
-        # This is a permanent token that doesn't expire
         self.readonly_token = os.environ.get("LIGHTER_READONLY_TOKEN", "").strip()
-
         self._by_market_id, self._by_symbol = _orderbooks_index()
         self._account_index = None  # Lazy fetch
 

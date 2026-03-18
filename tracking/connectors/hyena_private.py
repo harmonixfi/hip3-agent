@@ -81,10 +81,12 @@ def _all_mids(*, dex: str) -> Dict[str, float]:
 class HyenaPrivateConnector(PrivateConnectorBase):
     """Monitoring connector for Hyena (Hyperliquid-style)."""
 
-    def __init__(self):
+    def __init__(self, *, address: Optional[str] = None):
         super().__init__("hyena")
-        self.address = (os.environ.get("HYENA_ADDRESS") or "").strip()
-        self.dex = (os.environ.get("HYENA_DEX") or DEFAULT_DEX).strip() or DEFAULT_DEX
+        self.address = (
+            address or os.environ.get("HYENA_ADDRESS") or ""
+        ).strip()
+        self.dex = (os.environ.get("HYENA_DEX") or DEFAULT_DEX).strip()
         if not self.address:
             raise RuntimeError("Hyena config missing. Set HYENA_ADDRESS.")
 

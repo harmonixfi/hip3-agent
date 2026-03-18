@@ -55,10 +55,14 @@ def _get(path: str, jwt: str, timeout: int = 30) -> Dict[str, Any]:
 class ParadexPrivateConnector(PrivateConnectorBase):
     """Private connector for Paradex using Bearer JWT."""
 
-    def __init__(self):
+    def __init__(self, *, jwt: Optional[str] = None, account_address: Optional[str] = None):
         super().__init__("paradex")
-        self.jwt = (os.environ.get("PARADEX_JWT") or os.environ.get("PARADEX_READONLY_TOKEN") or "").strip()
-        self.account_address = (os.environ.get("PARADEX_ACCOUNT_ADDRESS") or "").strip()
+        self.jwt = (
+            jwt or os.environ.get("PARADEX_JWT") or os.environ.get("PARADEX_READONLY_TOKEN") or ""
+        ).strip()
+        self.account_address = (
+            account_address or os.environ.get("PARADEX_ACCOUNT_ADDRESS") or ""
+        ).strip()
         if not self.jwt:
             raise RuntimeError(
                 "Paradex credentials missing. Set PARADEX_JWT (recommended: readonly token) or PARADEX_READONLY_TOKEN."

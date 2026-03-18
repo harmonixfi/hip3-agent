@@ -95,15 +95,17 @@ def _market_prices(product_ids: List[str]) -> Dict[str, float]:
 class EtherealPrivateConnector(PrivateConnectorBase):
     """Connector for Ethereal that fetches subaccount balances + positions."""
 
-    def __init__(self):
+    def __init__(self, *, address: Optional[str] = None):
         super().__init__("ethereal")
-        self.sender = (os.environ.get("ETHEREAL_ACCOUNT_ADDRESS") or os.environ.get("ETHEREAL_SENDER") or "").strip()
-        self.subaccount_id = (os.environ.get("ETHEREAL_SUBACCOUNT_ID") or "").strip()
-
+        self.sender = (
+            address
+            or os.environ.get("ETHEREAL_ACCOUNT_ADDRESS")
+            or os.environ.get("ETHEREAL_SENDER")
+            or ""
+        ).strip()
+        self.subaccount_id = os.environ.get("ETHEREAL_SUBACCOUNT_ID", "").strip()
         if not self.sender:
-            raise RuntimeError(
-                "Ethereal config missing. Set ETHEREAL_ACCOUNT_ADDRESS (or ETHEREAL_SENDER)."
-            )
+            raise RuntimeError("Ethereal config missing. Set ETHEREAL_ACCOUNT_ADDRESS or ETHEREAL_SENDER.")
 
     def _subaccounts(self) -> List[Dict[str, Any]]:
         data = _get("/v1/subaccount", {"sender": self.sender, "order": "desc", "limit": 200})

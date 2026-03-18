@@ -96,13 +96,16 @@ def _all_mids(*, dex: str = DEFAULT_DEX) -> Dict[str, float]:
 class HyperliquidPrivateConnector(PrivateConnectorBase):
     """Monitoring connector for Hyperliquid and builder perp dexes."""
 
-    def __init__(self):
+    def __init__(self, *, address: Optional[str] = None):
         super().__init__("hyperliquid")
-        self.address = (
-            os.environ.get("HYPERLIQUID_ADDRESS")
-            or os.environ.get("ETHEREAL_ACCOUNT_ADDRESS")
-            or ""
-        ).strip()
+        if address:
+            self.address = address.strip()
+        else:
+            self.address = (
+                os.environ.get("HYPERLIQUID_ADDRESS")
+                or os.environ.get("ETHEREAL_ACCOUNT_ADDRESS")
+                or ""
+            ).strip()
         self.dex = (os.environ.get("HYPERLIQUID_DEX") or DEFAULT_DEX).strip()
         if not self.address:
             raise RuntimeError(

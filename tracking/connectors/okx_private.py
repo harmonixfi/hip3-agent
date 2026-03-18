@@ -45,15 +45,15 @@ def _hmac_sha256_base64(secret: str, msg: str) -> str:
 
 
 class OKXPrivateConnector(PrivateConnectorBase):
-    def __init__(self):
+    def __init__(self, *, api_key: Optional[str] = None, api_secret: Optional[str] = None, passphrase: Optional[str] = None):
         super().__init__("okx")
-        self.api_key = (os.environ.get("OKX_API_KEY") or "").strip()
-        self.api_secret = (os.environ.get("OKX_API_SECRET") or "").strip()
-        self.passphrase = (os.environ.get("OKX_API_PASSPHRASE") or "").strip()
+        self.api_key = (api_key or os.environ.get("OKX_API_KEY") or "").strip()
+        self.api_secret = (api_secret or os.environ.get("OKX_API_SECRET") or "").strip()
+        self.passphrase = (passphrase or os.environ.get("OKX_API_PASSPHRASE") or "").strip()
         self.base_url = (os.environ.get("OKX_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
 
-        if not (self.api_key and self.api_secret and self.passphrase):
-            raise RuntimeError("OKX credentials missing. Set OKX_API_KEY, OKX_API_SECRET, OKX_API_PASSPHRASE")
+        if not self.api_key or not self.api_secret:
+            raise RuntimeError("OKX credentials missing. Set OKX_API_KEY, OKX_API_SECRET, OKX_API_PASSPHRASE.")
 
     def _signed_request(
         self,

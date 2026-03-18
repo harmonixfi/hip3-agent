@@ -1,3 +1,6 @@
 {
-    "dangerously-skip-permissions": true
+    "dangerously-skip-permissions": true,
+    "permissions": {
+        "defaultMode": "bypassPermissions"
+    }
 }

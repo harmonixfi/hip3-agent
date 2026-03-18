@@ -137,6 +137,8 @@ def upsert_leg(con: sqlite3.Connection, position_id: str, leg: LegConfig, now_ms
         meta["margin_mode"] = leg.margin_mode
     if leg.collateral is not None:
         meta["collateral"] = leg.collateral
+    if leg.wallet_label:
+        meta["wallet_label"] = leg.wallet_label
 
     sql = """
     INSERT INTO pm_legs(
@@ -205,7 +207,7 @@ def list_positions(con: sqlite3.Connection) -> List[dict]:
     leg_sql = """
     SELECT leg_id, position_id, venue, inst_id, side, size,
            entry_price, current_price, unrealized_pnl, realized_pnl,
-           status, opened_at_ms, closed_at_ms, meta_json
+           status, opened_at_ms, closed_at_ms, meta_json, account_id
     FROM pm_legs
     ORDER BY position_id, leg_id
     """
@@ -228,6 +230,7 @@ def list_positions(con: sqlite3.Connection) -> List[dict]:
             "opened_at_ms": row[11],
             "closed_at_ms": row[12],
             "meta": json.loads(row[13]) if row[13] else {},
+            "account_id": row[14],
         }
 
         if row[1] in pos_dict:

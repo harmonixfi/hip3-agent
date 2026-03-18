@@ -95,18 +95,18 @@ def insert_cashflow_events(con: sqlite3.Connection, events: Iterable[CashflowEve
     return n
 
 
-def load_managed_leg_index(con: sqlite3.Connection) -> Dict[Tuple[str, str, str], Tuple[str, str]]:
-    """Map (venue, inst_id, side) -> (position_id, leg_id)."""
+def load_managed_leg_index(con: sqlite3.Connection) -> Dict[Tuple[str, str, str, str], Tuple[str, str]]:
+    """Map (venue, account_id, inst_id, side) -> (position_id, leg_id)."""
     cur = con.execute(
         """
-        SELECT leg_id, position_id, venue, inst_id, side
+        SELECT leg_id, position_id, venue, inst_id, side, account_id
         FROM pm_legs
         WHERE status='OPEN'
         """
     )
-    idx: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
-    for leg_id, position_id, venue, inst_id, side in cur.fetchall():
-        key = (str(venue), str(inst_id), str(side).upper())
+    idx: Dict[Tuple[str, str, str, str], Tuple[str, str]] = {}
+    for leg_id, position_id, venue, inst_id, side, account_id in cur.fetchall():
+        key = (str(venue), str(account_id or ""), str(inst_id), str(side).upper())
         idx[key] = (str(position_id), str(leg_id))
     return idx
 

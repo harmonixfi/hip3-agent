@@ -125,7 +125,7 @@ def ingest_paradex(con: sqlite3.Connection) -> int:
 
         position_id = None
         leg_id = None
-        k = ("paradex", market, side)
+        k = ("paradex", str(account_id), market, side)
         if k in idx:
             position_id, leg_id = idx[k]
 
@@ -204,7 +204,7 @@ def ingest_ethereal(con: sqlite3.Connection) -> int:
         side = str(p.get("side") or "").upper()
         position_id = None
         leg_id = None
-        k = ("ethereal", inst_id, side)
+        k = ("ethereal", str(account_id), inst_id, side)
         if k in idx:
             position_id, leg_id = idx[k]
 
@@ -274,8 +274,8 @@ def _is_spot_inst_id(inst_id: str) -> bool:
     return "/" in str(inst_id or "")
 
 
-def _load_hyperliquid_targets(con: sqlite3.Connection) -> Dict[str, Dict[str, Dict[str, str]]]:
-    """Return dex -> coin -> target metadata for OPEN managed Hyperliquid perp legs.
+def _load_hyperliquid_targets(con: sqlite3.Connection) -> Dict[str, Dict[str, Dict[str, Dict[str, str]]]]:
+    """Return account_id -> dex -> coin -> target metadata for OPEN managed Hyperliquid perp legs.
 
     We only ingest realized funding for perp legs. For SPOT_PERP positions this means
     the SHORT leg, because the LONG leg is the spot inventory.
@@ -283,16 +283,17 @@ def _load_hyperliquid_targets(con: sqlite3.Connection) -> Dict[str, Dict[str, Di
 
     cur = con.execute(
         """
-        SELECT p.strategy, l.position_id, l.leg_id, l.inst_id, l.side
+        SELECT p.strategy, l.position_id, l.leg_id, l.inst_id, l.side, l.account_id
         FROM pm_legs l
         JOIN pm_positions p ON p.position_id = l.position_id
         WHERE l.venue='hyperliquid' AND l.status='OPEN' AND p.status='OPEN'
         """
     )
-    targets: Dict[str, Dict[str, Dict[str, str]]] = {}
-    for strategy, position_id, leg_id, inst_id, side in cur.fetchall():
+    targets: Dict[str, Dict[str, Dict[str, Dict[str, str]]]] = {}
+    for strategy, position_id, leg_id, inst_id, side, account_id in cur.fetchall():
         inst = str(inst_id or "")
         side_u = str(side or "").upper()
+        acct = str(account_id or "")
         if _is_spot_inst_id(inst):
             continue
         if str(strategy or "").upper() == "SPOT_PERP" and side_u != "SHORT":
@@ -301,7 +302,7 @@ def _load_hyperliquid_targets(con: sqlite3.Connection) -> Dict[str, Dict[str, Di
         coin = strip_coin_namespace(coin)
         if not coin:
             continue
-        targets.setdefault(dex, {})[coin] = {
+        targets.setdefault(acct, {}).setdefault(dex, {})[coin] = {
             "position_id": str(position_id),
             "leg_id": str(leg_id),
             "inst_id": namespaced_inst_id(dex=dex, coin=coin),
@@ -325,12 +326,9 @@ def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUI
     not based on a single truncated response.
     """
 
-    targets_by_dex = _load_hyperliquid_targets(con)
-    if not targets_by_dex:
+    targets_by_account = _load_hyperliquid_targets(con)
+    if not targets_by_account:
         return 0
-
-    c = HyperliquidPrivateConnector()
-    account_id = c.address
 
     end_ms = now_ms()
     start_ms = end_ms - int(since_hours) * 3600 * 1000
@@ -338,124 +336,125 @@ def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUI
     events: List[CashflowEvent] = []
     windows = _iter_time_windows(start_ms, end_ms)
 
-    for dex, coin_targets in targets_by_dex.items():
-        for win_start, win_end in windows:
-            # Funding payments
-            try:
-                rows = _hl_post(
-                    {"type": "userFunding", "user": account_id, "startTime": int(win_start), "endTime": int(win_end)},
-                    dex=dex,
-                )
-                if isinstance(rows, list):
-                    for r in rows:
-                        if not isinstance(r, dict):
-                            continue
-                        ts = r.get("time") or r.get("ts") or r.get("timestamp")
-                        try:
-                            ts_ms = int(ts)
-                        except Exception:
-                            continue
+    for account_id, targets_by_dex in targets_by_account.items():
+        for dex, coin_targets in targets_by_dex.items():
+            for win_start, win_end in windows:
+                # Funding payments
+                try:
+                    rows = _hl_post(
+                        {"type": "userFunding", "user": account_id, "startTime": int(win_start), "endTime": int(win_end)},
+                        dex=dex,
+                    )
+                    if isinstance(rows, list):
+                        for r in rows:
+                            if not isinstance(r, dict):
+                                continue
+                            ts = r.get("time") or r.get("ts") or r.get("timestamp")
+                            try:
+                                ts_ms = int(ts)
+                            except Exception:
+                                continue
 
-                        d = r.get("delta") if isinstance(r.get("delta"), dict) else None
-                        raw_coin = ""
-                        amt = None
-                        if d is not None:
-                            raw_coin = str(d.get("coin") or "")
-                            amt = d.get("usdc")
-                            if amt is None:
-                                amt = d.get("funding")
-                        else:
-                            raw_coin = str(r.get("coin") or "")
-                            amt = r.get("funding") or r.get("usdc") or r.get("payment")
+                            d = r.get("delta") if isinstance(r.get("delta"), dict) else None
+                            raw_coin = ""
+                            amt = None
+                            if d is not None:
+                                raw_coin = str(d.get("coin") or "")
+                                amt = d.get("usdc")
+                                if amt is None:
+                                    amt = d.get("funding")
+                            else:
+                                raw_coin = str(r.get("coin") or "")
+                                amt = r.get("funding") or r.get("usdc") or r.get("payment")
 
-                        coin = strip_coin_namespace(raw_coin)
-                        target = coin_targets.get(coin)
-                        if target is None:
-                            continue
+                            coin = strip_coin_namespace(raw_coin)
+                            target = coin_targets.get(coin)
+                            if target is None:
+                                continue
 
-                        try:
-                            amount = float(amt)
-                        except Exception:
-                            continue
+                            try:
+                                amount = float(amt)
+                            except Exception:
+                                continue
 
-                        events.append(
-                            CashflowEvent(
-                                venue="hyperliquid",
-                                account_id=str(account_id),
-                                ts=ts_ms,
-                                cf_type="FUNDING",
-                                amount=float(amount),
-                                currency="USDC",
-                                description=f"funding {target['inst_id']}",
-                                position_id=target["position_id"],
-                                leg_id=target["leg_id"],
-                                raw_json=r,
-                                meta={
-                                    "coin": coin,
-                                    "dex": dex or "",
-                                    "inst_id": target["inst_id"],
-                                    # Hyperliquid userFunding `usdc` is already account-PnL signed.
-                                    # Do not flip again for SHORT legs.
-                                    "pnl_sign": 1,
-                                },
+                            events.append(
+                                CashflowEvent(
+                                    venue="hyperliquid",
+                                    account_id=str(account_id),
+                                    ts=ts_ms,
+                                    cf_type="FUNDING",
+                                    amount=float(amount),
+                                    currency="USDC",
+                                    description=f"funding {target['inst_id']}",
+                                    position_id=target["position_id"],
+                                    leg_id=target["leg_id"],
+                                    raw_json=r,
+                                    meta={
+                                        "coin": coin,
+                                        "dex": dex or "",
+                                        "inst_id": target["inst_id"],
+                                        # Hyperliquid userFunding `usdc` is already account-PnL signed.
+                                        # Do not flip again for SHORT legs.
+                                        "pnl_sign": 1,
+                                    },
+                                )
                             )
-                        )
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
-            # Fees from fills
-            try:
-                fills = _hl_post(
-                    {
-                        "type": "userFillsByTime",
-                        "user": account_id,
-                        "startTime": int(win_start),
-                        "endTime": int(win_end),
-                        "aggregateByTime": False,
-                    },
-                    dex=dex,
-                )
-                if isinstance(fills, list):
-                    for r in fills:
-                        if not isinstance(r, dict):
-                            continue
-                        ts = r.get("time") or r.get("ts") or r.get("timestamp")
-                        try:
-                            ts_ms = int(ts)
-                        except Exception:
-                            continue
+                # Fees from fills
+                try:
+                    fills = _hl_post(
+                        {
+                            "type": "userFillsByTime",
+                            "user": account_id,
+                            "startTime": int(win_start),
+                            "endTime": int(win_end),
+                            "aggregateByTime": False,
+                        },
+                        dex=dex,
+                    )
+                    if isinstance(fills, list):
+                        for r in fills:
+                            if not isinstance(r, dict):
+                                continue
+                            ts = r.get("time") or r.get("ts") or r.get("timestamp")
+                            try:
+                                ts_ms = int(ts)
+                            except Exception:
+                                continue
 
-                        fee = r.get("fee")
-                        try:
-                            fee_f = float(fee)
-                        except Exception:
-                            continue
-                        if fee_f == 0:
-                            continue
+                            fee = r.get("fee")
+                            try:
+                                fee_f = float(fee)
+                            except Exception:
+                                continue
+                            if fee_f == 0:
+                                continue
 
-                        raw_coin = str(r.get("coin") or r.get("asset") or "")
-                        coin = strip_coin_namespace(raw_coin)
-                        target = coin_targets.get(coin)
-                        if target is None:
-                            continue
+                            raw_coin = str(r.get("coin") or r.get("asset") or "")
+                            coin = strip_coin_namespace(raw_coin)
+                            target = coin_targets.get(coin)
+                            if target is None:
+                                continue
 
-                        events.append(
-                            CashflowEvent(
-                                venue="hyperliquid",
-                                account_id=str(account_id),
-                                ts=ts_ms,
-                                cf_type="FEE",
-                                amount=float(-abs(fee_f)),
-                                currency="USDC",
-                                description=f"trade_fee {target['inst_id']}",
-                                position_id=target["position_id"],
-                                leg_id=target["leg_id"],
-                                raw_json=r,
-                                meta={"coin": coin, "dex": dex or "", "inst_id": target["inst_id"]},
+                            events.append(
+                                CashflowEvent(
+                                    venue="hyperliquid",
+                                    account_id=str(account_id),
+                                    ts=ts_ms,
+                                    cf_type="FEE",
+                                    amount=float(-abs(fee_f)),
+                                    currency="USDC",
+                                    description=f"trade_fee {target['inst_id']}",
+                                    position_id=target["position_id"],
+                                    leg_id=target["leg_id"],
+                                    raw_json=r,
+                                    meta={"coin": coin, "dex": dex or "", "inst_id": target["inst_id"]},
+                                )
                             )
-                        )
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
     return insert_cashflow_events(con, events)
 
@@ -493,7 +492,7 @@ def ingest_lighter(con: sqlite3.Connection) -> int:
         except Exception:
             continue
 
-        leg_key = str(p.get("leg_id") or f"{inst_id}:{side}")
+        leg_key = str(p.get("leg_id") or f"{account_id}:{inst_id}:{side}")
         last = st["lighter"].get(leg_key)
         ts_ms = int(time.time() * 1000)
 
@@ -510,7 +509,7 @@ def ingest_lighter(con: sqlite3.Connection) -> int:
 
         position_id = None
         leg_id = None
-        k = ("lighter", inst_id, side)
+        k = ("lighter", str(account_id), inst_id, side)
         if k in idx:
             position_id, leg_id = idx[k]
 
@@ -595,7 +594,7 @@ def ingest_okx(con: sqlite3.Connection, *, since_hours: int = 24 * 7) -> int:
         position_id = None
         leg_id = None
         for side in ("LONG", "SHORT"):
-            k = ("okx", inst_id, side)
+            k = ("okx", str(account_id), inst_id, side)
             if k in idx:
                 position_id, leg_id = idx[k]
                 break
@@ -623,6 +622,8 @@ def cmd_ingest(args) -> int:
     con = sqlite3.connect(str(args.db))
     con.execute("PRAGMA foreign_keys = ON")
     try:
+        from tracking.position_manager.db_sync import ensure_multi_wallet_columns
+        ensure_multi_wallet_columns(con)
         n = 0
         venues = [v.strip().lower() for v in args.venues.split(",") if v.strip()]
         if "paradex" in venues:

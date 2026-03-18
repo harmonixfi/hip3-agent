@@ -492,17 +492,22 @@ def _stable_sum(con: sqlite3.Connection, position_id: str, cf_type: str, since_m
     return float(row[0] or 0.0) if row else 0.0
 
 
-def _window_funding_metrics(con: sqlite3.Connection, position_id: str, now_ms: int) -> Dict[str, float]:
+def _window_funding_metrics(con: sqlite3.Connection, position_id: str, now_ms: int, start_ms: Optional[int] = None) -> Dict[str, float]:
     one_day = 24 * 3600 * 1000
     funding_1d = _stable_sum(con, position_id, "FUNDING", now_ms - one_day, now_ms)
     funding_2d = _stable_sum(con, position_id, "FUNDING", now_ms - 2 * one_day, now_ms)
     funding_3d = _stable_sum(con, position_id, "FUNDING", now_ms - 3 * one_day, now_ms)
     funding_15d = _stable_sum(con, position_id, "FUNDING", now_ms - 15 * one_day, now_ms)
+    # Use min(days_open, 15) as denominator so new positions aren't diluted
+    days_open = 15.0
+    if start_ms is not None and start_ms > 0:
+        days_open = max((now_ms - start_ms) / one_day, 0.1)  # floor at 0.1 to avoid div-by-zero
+        days_open = min(days_open, 15.0)
     return {
         "funding_1d_usd": funding_1d,
         "funding_2d_usd": funding_2d,
         "funding_3d_usd": funding_3d,
-        "avg_15d_funding_usd_per_day": funding_15d / 15.0,
+        "avg_15d_funding_usd_per_day": funding_15d / days_open,
     }
 
 
@@ -536,7 +541,7 @@ def build_position_rows(con: sqlite3.Connection, positions: List[Dict[str, Any]]
         pid = position["position_id"]
         start_ms = _position_start_ms(con, position)
         amount_usd = _position_amount_usd(position)
-        funding = _window_funding_metrics(con, pid, now_ms)
+        funding = _window_funding_metrics(con, pid, now_ms, start_ms)
         open_fees_usd = resolve_open_fees_usd(con, position, start_ms, amount_usd)
         carry = carry_by.get(pid) or {}
         advisory, reason = _position_advisory(

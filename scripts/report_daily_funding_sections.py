@@ -204,9 +204,15 @@ def build_flagged_positions(position_rows: List[Dict[str, Any]], carry_warnings:
 
 def _fmt_funding_apr(
     funding: Optional[float], days: int, amount_usd: Optional[float],
-    fmt_money: Callable,
+    fmt_money: Callable, days_open: Optional[float] = None,
 ) -> str:
-    """Format funding amount with annualized APR on total capital (spot+perp 50:50)."""
+    """Format funding amount with annualized APR on total capital (spot+perp 50:50).
+
+    If the position is younger than the window (e.g. 2d old but showing 3d column),
+    display "-" since the data would be misleading.
+    """
+    if days_open is not None and days_open < days:
+        return "-"
     money = fmt_money(funding)
     if funding is None or amount_usd is None or amount_usd <= 0 or days <= 0:
         return money
@@ -227,12 +233,18 @@ def format_portfolio_summary_row(
     if carry_degraded:
         advisory = "INVESTIGATE"
         reason = "carry inputs degraded"
+    # Compute days_open for APR display guard
+    import time as _time
+    _start = row.get("start_ms")
+    days_open = None
+    if _start and _start > 0:
+        days_open = (_time.time() * 1000 - _start) / (24 * 3600 * 1000)
     return (
         f"- {row['ticker']} | venue {row['perp_venue']} | amount {fmt_money(row['amount_usd'])} | "
         f"start {row['start_time']} | avg15d/day {fmt_money(row['avg_15d_funding_usd_per_day'])} | "
-        f"1d {_fmt_funding_apr(row['funding_1d_usd'], 1, row['amount_usd'], fmt_money)} | "
-        f"2d {_fmt_funding_apr(row['funding_2d_usd'], 2, row['amount_usd'], fmt_money)} | "
-        f"3d {_fmt_funding_apr(row['funding_3d_usd'], 3, row['amount_usd'], fmt_money)} | "
+        f"1d {_fmt_funding_apr(row['funding_1d_usd'], 1, row['amount_usd'], fmt_money, days_open)} | "
+        f"2d {_fmt_funding_apr(row['funding_2d_usd'], 2, row['amount_usd'], fmt_money, days_open)} | "
+        f"3d {_fmt_funding_apr(row['funding_3d_usd'], 3, row['amount_usd'], fmt_money, days_open)} | "
         f"open fees {fmt_money(row['open_fees_usd'])} | "
         f"BE {fmt_days(row['breakeven_days'])} | **{advisory}** ({reason})"
     )

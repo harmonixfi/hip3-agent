@@ -55,6 +55,8 @@ def sync_registry(con: sqlite3.Connection, positions: List[PositionConfig], dele
     """
     now_ms = int(time.time() * 1000)
 
+    from .accounts import resolve_venue_accounts
+
     # Upsert positions
     for pos in positions:
         upsert_position(con, pos, now_ms)
@@ -62,6 +64,22 @@ def sync_registry(con: sqlite3.Connection, positions: List[PositionConfig], dele
         # Upsert legs for this position
         for leg in pos.legs:
             upsert_leg(con, pos.position_id, leg, now_ms)
+
+    # Resolve wallet_label -> account_id immediately so cashflow ingest
+    # and puller can match legs without waiting for a successful pull cycle.
+    _account_cache: dict = {}
+    for pos in positions:
+        for leg in pos.legs:
+            label = leg.wallet_label or "main"
+            venue = leg.venue
+            if venue not in _account_cache:
+                _account_cache[venue] = resolve_venue_accounts(venue)
+            address = _account_cache[venue].get(label)
+            if address:
+                con.execute(
+                    "UPDATE pm_legs SET account_id = ? WHERE leg_id = ? AND (account_id IS NULL OR account_id = '')",
+                    (address, leg.leg_id),
+                )
 
     con.commit()
 

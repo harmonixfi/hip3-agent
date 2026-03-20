@@ -119,6 +119,16 @@ def _fmt_pct(x: Optional[float]) -> str:
     return f"{x:+.1f}%"
 
 
+def _fmt_funding_apr(funding: Optional[float], days: int, amount_usd: Optional[float]) -> str:
+    """Format funding amount with annualized APR on total capital (spot+perp)."""
+    money = _fmt_money(funding)
+    if funding is None or amount_usd is None or amount_usd <= 0 or days <= 0:
+        return money
+    daily = funding / days
+    apr = daily * 365 / (amount_usd * 2) * 100  # *2 because capital = spot + perp (50:50)
+    return f"{money} ({apr:.0f}%)"
+
+
 def _fmt_days(x: Optional[float]) -> str:
     if x is None:
         return "n/a"
@@ -835,7 +845,7 @@ def render_daily_report(
         lines.append(
             f"- {row['ticker']} | venue {row['perp_venue']} | amount {_fmt_money(row['amount_usd'])} | start {row['start_time']} | "
             f"avg15d/day {_fmt_money(row['avg_15d_funding_usd_per_day'])} | "
-            f"1d {_fmt_money(row['funding_1d_usd'])} | 2d {_fmt_money(row['funding_2d_usd'])} | 3d {_fmt_money(row['funding_3d_usd'])} | "
+            f"1d {_fmt_funding_apr(row['funding_1d_usd'], 1, row['amount_usd'])} | 2d {_fmt_funding_apr(row['funding_2d_usd'], 2, row['amount_usd'])} | 3d {_fmt_funding_apr(row['funding_3d_usd'], 3, row['amount_usd'])} | "
             f"open fees {_fmt_money(row['open_fees_usd'])} | BE {_fmt_days(row['breakeven_days'])} | "
             f"**{row['advisory']}** ({row['reason']})"
         )

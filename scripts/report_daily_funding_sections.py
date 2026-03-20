@@ -8,7 +8,7 @@ import sys
 from datetime import datetime, timezone
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, TextIO
+from typing import Any, Callable, Dict, List, Optional, Sequence, TextIO
 
 SECTION_PORTFOLIO = "portfolio-summary"
 SECTION_ROTATION_GENERAL = "rotation-general"
@@ -202,6 +202,19 @@ def build_flagged_positions(position_rows: List[Dict[str, Any]], carry_warnings:
     return flagged
 
 
+def _fmt_funding_apr(
+    funding: Optional[float], days: int, amount_usd: Optional[float],
+    fmt_money: Callable,
+) -> str:
+    """Format funding amount with annualized APR on total capital (spot+perp 50:50)."""
+    money = fmt_money(funding)
+    if funding is None or amount_usd is None or amount_usd <= 0 or days <= 0:
+        return money
+    daily = funding / days
+    apr = daily * 365 / (amount_usd * 2) * 100
+    return f"{money} ({apr:.0f}%)"
+
+
 def format_portfolio_summary_row(
     row: Dict[str, Any],
     *,
@@ -217,8 +230,10 @@ def format_portfolio_summary_row(
     return (
         f"- {row['ticker']} | venue {row['perp_venue']} | amount {fmt_money(row['amount_usd'])} | "
         f"start {row['start_time']} | avg15d/day {fmt_money(row['avg_15d_funding_usd_per_day'])} | "
-        f"1d {fmt_money(row['funding_1d_usd'])} | 2d {fmt_money(row['funding_2d_usd'])} | "
-        f"3d {fmt_money(row['funding_3d_usd'])} | open fees {fmt_money(row['open_fees_usd'])} | "
+        f"1d {_fmt_funding_apr(row['funding_1d_usd'], 1, row['amount_usd'], fmt_money)} | "
+        f"2d {_fmt_funding_apr(row['funding_2d_usd'], 2, row['amount_usd'], fmt_money)} | "
+        f"3d {_fmt_funding_apr(row['funding_3d_usd'], 3, row['amount_usd'], fmt_money)} | "
+        f"open fees {fmt_money(row['open_fees_usd'])} | "
         f"BE {fmt_days(row['breakeven_days'])} | **{advisory}** ({reason})"
     )
 

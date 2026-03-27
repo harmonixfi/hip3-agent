@@ -22,6 +22,8 @@ ROOT = Path(__file__).parent.parent
 # Ensure repo root is on sys.path so `import tracking...` works.
 sys.path.insert(0, str(ROOT))
 
+from tracking.position_manager.accounts import resolve_venue_accounts  # noqa: E402
+
 DEFAULT_DB = ROOT / "tracking" / "db" / "arbit_v3.db"
 
 
@@ -100,11 +102,18 @@ def sync_registry(con: sqlite3.Connection, registry_path: Path) -> Dict[str, Any
         n_pos += 1
 
         # legs
+        _account_cache: Dict[str, Dict[str, str]] = {}
         for leg in p.legs:
             opened_at = _q1(con, "SELECT opened_at_ms FROM pm_legs WHERE leg_id=?", (leg.leg_id,))
             opened_at_ms = int(opened_at) if opened_at is not None else now_ms
 
             leg_status = "CLOSED" if p.status == "CLOSED" else "OPEN"
+
+            # Resolve wallet_label -> account_id
+            if leg.venue not in _account_cache:
+                _account_cache[leg.venue] = resolve_venue_accounts(leg.venue)
+            label = leg.wallet_label or "main"
+            account_id = _account_cache[leg.venue].get(label)
 
             con.execute(
                 """
@@ -112,8 +121,8 @@ def sync_registry(con: sqlite3.Connection, registry_path: Path) -> Dict[str, Any
                   leg_id, position_id, venue, inst_id, side, size,
                   entry_price, current_price, unrealized_pnl, realized_pnl,
                   status, opened_at_ms, closed_at_ms,
-                  raw_json, meta_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  raw_json, meta_json, account_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(leg_id) DO UPDATE SET
                   position_id=excluded.position_id,
                   venue=excluded.venue,
@@ -122,7 +131,8 @@ def sync_registry(con: sqlite3.Connection, registry_path: Path) -> Dict[str, Any
                   size=excluded.size,
                   status=excluded.status,
                   raw_json=excluded.raw_json,
-                  meta_json=excluded.meta_json
+                  meta_json=excluded.meta_json,
+                  account_id=excluded.account_id
                 """,
                 (
                     leg.leg_id,
@@ -150,6 +160,7 @@ def sync_registry(con: sqlite3.Connection, registry_path: Path) -> Dict[str, Any
                         separators=(",", ":"),
                         sort_keys=True,
                     ),
+                    account_id,
                 ),
             )
             n_legs += 1

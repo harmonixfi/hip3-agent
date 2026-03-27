@@ -37,6 +37,12 @@ HYPERLIQUID_DEX_TO_LORIS = {
     "hyna": "hyena",
 }
 
+# Symbol aliases: maps internal/position names to Loris CSV symbols
+# e.g. Hyperliquid perp uses "GOLD" but Loris CSV uses commodity code "XAU"
+SYMBOL_ALIASES = {
+    "GOLD": "XAU",
+}
+
 
 def _is_spot_leg(inst_id: str) -> bool:
     """
@@ -129,6 +135,9 @@ def _normalize_loris_symbol(inst_id: str) -> str:
     # If paradex style with dashes remains (e.g. BTC-USD), keep base
     if "-" in symbol:
         symbol = symbol.split("-")[0]
+
+    # Apply symbol aliases (e.g. GOLD -> XAU)
+    symbol = SYMBOL_ALIASES.get(symbol, symbol)
 
     return symbol
 

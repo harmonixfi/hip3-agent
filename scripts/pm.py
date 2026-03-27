@@ -94,7 +94,7 @@ def sync_registry(con: sqlite3.Connection, registry_path: Path) -> Dict[str, Any
                 created_at_ms,
                 now_ms,
                 json.dumps(raw_obj, separators=(",", ":"), sort_keys=True),
-                json.dumps({"base": p.base, "thresholds": p.thresholds or {}}, separators=(",", ":"), sort_keys=True),
+                json.dumps({k: v for k, v in {"base": p.base, "amount_usd": p.amount_usd, "thresholds": p.thresholds or {}}.items() if v is not None}, separators=(",", ":"), sort_keys=True),
             ),
         )
         n_pos += 1

@@ -91,7 +91,7 @@
         "venue": "hyperliquid",
         "inst_id": "ORCL",
         "side": "LONG",
-        "qty": 55.774,
+        "qty": 22.174,
         "qty_type": "token",
         "wallet_label": "main"
       },
@@ -100,7 +100,7 @@
         "venue": "hyperliquid",
         "inst_id": "xyz:ORCL",
         "side": "SHORT",
-        "qty": 55.774,
+        "qty": 22.174,
         "qty_type": "token",
         "wallet_label": "main"
       }
@@ -159,27 +159,55 @@
     ]
   },
   {
+    "position_id": "pos_xyz_MSTR",
+    "strategy_type": "SPOT_PERP",
+    "base": "MSTR",
+    "status": "CLOSED",
+    "legs": [
+      {
+        "leg_id": "pos_xyz_MSTR_SPOT",
+        "venue": "hyperliquid",
+        "inst_id": "MSTR",
+        "side": "LONG",
+        "qty": 7.018,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      },
+      {
+        "leg_id": "pos_xyz_MSTR_PERP",
+        "venue": "hyperliquid",
+        "inst_id": "xyz:MSTR",
+        "side": "SHORT",
+        "qty": 7.018,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      }
+    ]
+  },
+  {
     "position_id": "pos_xyz_GOLD",
     "strategy_type": "SPOT_PERP",
     "base": "GOLD",
-    "status": "CLOSED",
-    "amount_usd": 19950.00,
+    "status": "OPEN",
+    "amount_usd": 2992.37,
     "legs": [
       {
         "leg_id": "pos_xyz_GOLD_SPOT",
         "venue": "hyperliquid",
         "inst_id": "XAUT0/USDC",
         "side": "LONG",
-        "qty": 2.0017,
-        "qty_type": "token"
+        "qty": 0.66,
+        "qty_type": "token",
+        "wallet_label": "main"
       },
       {
         "leg_id": "pos_xyz_GOLD_PERP",
         "venue": "hyperliquid",
         "inst_id": "xyz:GOLD",
         "side": "SHORT",
-        "qty": 2.0017,
-        "qty_type": "token"
+        "qty": 0.66,
+        "qty_type": "token",
+        "wallet_label": "main"
       }
     ]
   },

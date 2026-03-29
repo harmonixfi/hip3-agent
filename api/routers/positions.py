@@ -231,7 +231,7 @@ def list_closed_positions(
                 opened_at=_ts_to_iso(pos["created_at_ms"]),
                 closed_at=_ts_to_iso(pos["closed_at_ms"]),
                 duration_days=duration_days,
-                amount_usd=round(amount_usd, 2) if amount_usd else None,
+                amount_usd=round(amount_usd, 2) if amount_usd is not None else None,
                 realized_spread_pnl=round(realized_spread, 2),
                 total_funding_earned=round(funding, 2),
                 total_fees_paid=round(fees, 2),

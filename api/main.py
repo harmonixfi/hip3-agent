@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from api.config import get_settings
@@ -96,6 +97,32 @@ app.include_router(portfolio.router)
 app.include_router(positions.router)
 app.include_router(cashflows.router)
 app.include_router(health.router)
+
+
+def custom_openapi() -> dict:
+    """Expose X-API-Key in OpenAPI so Swagger UI shows Authorize and sends the header."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    openapi_schema.setdefault("components", {}).setdefault("securitySchemes", {})[
+        "ApiKeyAuth"
+    ] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Same value as server env HARMONIX_API_KEY",
+    }
+    openapi_schema["security"] = [{"ApiKeyAuth": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi  # type: ignore[method-assign]
 
 
 # -------------------------------------------------------------------

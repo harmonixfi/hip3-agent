@@ -21,12 +21,15 @@ def _connect(readonly: bool = True) -> sqlite3.Connection:
     settings = get_settings()
     db_path = str(settings.db_path)
 
+    # FastAPI runs sync deps and route bodies on different worker threads; SQLite
+    # defaults to check_same_thread=True which raises ProgrammingError. Safe here
+    # because each request gets its own connection, closed in get_db() finally.
     if readonly:
         # SQLite URI mode for read-only access
         uri = f"file:{db_path}?mode=ro"
-        con = sqlite3.connect(uri, uri=True)
+        con = sqlite3.connect(uri, uri=True, check_same_thread=False)
     else:
-        con = sqlite3.connect(db_path)
+        con = sqlite3.connect(db_path, check_same_thread=False)
 
     con.execute("PRAGMA foreign_keys = ON")
     con.row_factory = sqlite3.Row  # dict-like access

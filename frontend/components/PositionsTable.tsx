@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { formatUSD, formatPct, formatBps, pnlColor } from "@/lib/format";
+import { avgSubPairBps } from "@/lib/subPairStats";
 import type { Position } from "@/lib/types";
 
 interface Props {
@@ -43,11 +44,8 @@ export default function PositionsTable({ positions }: Props) {
       case "carry_apr":
         return p.carry_apr ?? 0;
       case "exit_spread":
-        // Weighted average exit spread across sub-pairs
-        return p.sub_pairs.length > 0
-          ? p.sub_pairs.reduce((s, sp) => s + sp.exit_spread_bps, 0) /
-              p.sub_pairs.length
-          : 0;
+        // Average exit spread across sub-pairs (only non-null legs)
+        return avgSubPairBps(p.sub_pairs, "exit_spread_bps") ?? 0;
     }
   }
 
@@ -96,16 +94,8 @@ export default function PositionsTable({ positions }: Props) {
           </thead>
           <tbody>
             {sorted.map((p) => {
-              const avgExitSpread =
-                p.sub_pairs.length > 0
-                  ? p.sub_pairs.reduce((s, sp) => s + sp.exit_spread_bps, 0) /
-                    p.sub_pairs.length
-                  : null;
-              const avgSpreadPnl =
-                p.sub_pairs.length > 0
-                  ? p.sub_pairs.reduce((s, sp) => s + sp.spread_pnl_bps, 0) /
-                    p.sub_pairs.length
-                  : null;
+              const avgExitSpread = avgSubPairBps(p.sub_pairs, "exit_spread_bps");
+              const avgSpreadPnl = avgSubPairBps(p.sub_pairs, "spread_pnl_bps");
 
               return (
                 <tr key={p.position_id} className="hover:bg-gray-800/50 transition-colors">

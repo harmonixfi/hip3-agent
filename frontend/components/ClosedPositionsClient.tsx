@@ -6,6 +6,11 @@ import type { ClosedPosition } from "@/lib/types";
 
 type SortKey = "base" | "duration_days" | "amount_usd" | "net_pnl" | "net_apr";
 
+/** API may omit or null numeric fields; coalesce before arithmetic (avoids NaN in totals/sort). */
+function num(v: number | null | undefined): number {
+  return v ?? 0;
+}
+
 interface Props {
   closedPositions: ClosedPosition[];
 }
@@ -24,21 +29,22 @@ export default function ClosedPositionsClient({ closedPositions }: Props) {
   }
 
   const sorted = [...closedPositions].sort((a, b) => {
-    const va = a[sortKey];
-    const vb = b[sortKey];
-    const cmp =
-      typeof va === "string"
-        ? (va as string).localeCompare(vb as string)
-        : (va as number) - (vb as number);
+    if (sortKey === "base") {
+      const cmp = a.base.localeCompare(b.base);
+      return sortAsc ? cmp : -cmp;
+    }
+    const va = num(a[sortKey] as number | null | undefined);
+    const vb = num(b[sortKey] as number | null | undefined);
+    const cmp = va - vb;
     return sortAsc ? cmp : -cmp;
   });
 
   const totals = closedPositions.reduce(
     (acc, p) => ({
-      spread: acc.spread + p.realized_spread_pnl,
-      funding: acc.funding + p.total_funding_earned,
-      fees: acc.fees + p.total_fees_paid,
-      net: acc.net + p.net_pnl,
+      spread: acc.spread + num(p.realized_spread_pnl),
+      funding: acc.funding + num(p.total_funding_earned),
+      fees: acc.fees + num(p.total_fees_paid),
+      net: acc.net + num(p.net_pnl),
     }),
     { spread: 0, funding: 0, fees: 0, net: 0 },
   );
@@ -112,7 +118,7 @@ export default function ClosedPositionsClient({ closedPositions }: Props) {
               <tr
                 key={p.position_id}
                 className={`hover:bg-gray-800/50 transition-colors ${
-                  p.net_pnl >= 0
+                  num(p.net_pnl) >= 0
                     ? "border-l-2 border-l-green-500/30"
                     : "border-l-2 border-l-red-500/30"
                 }`}

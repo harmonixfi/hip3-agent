@@ -167,8 +167,13 @@ class ManualCashflowRequest(BaseModel):
 
 
 class ManualCashflowResponse(BaseModel):
+    """Returned after POST /api/cashflows/manual. `message` is always set by the handler."""
+
     cashflow_id: int
-    message: str = "Cashflow recorded"
+    message: str = Field(
+        ...,
+        description="Human-readable confirmation (e.g. cf_type, amount, currency).",
+    )
 
 
 # ============================================================

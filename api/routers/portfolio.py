@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import get_db
 from api.models.schemas import AccountEquity, PortfolioOverview
@@ -26,6 +26,13 @@ def _ts_to_iso(ts_ms: Optional[int]) -> str:
     if ts_ms is None:
         return datetime.now(timezone.utc).isoformat()
     return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).isoformat()
+
+
+def _parse_ymd_strict(s: str) -> str:
+    """Validate calendar date YYYY-MM-DD; return stripped string or raise ValueError."""
+    raw = s.strip()
+    datetime.strptime(raw, "%Y-%m-%d")
+    return raw
 
 
 @router.get("/overview", response_model=PortfolioOverview)
@@ -75,29 +82,46 @@ def portfolio_overview(
     ).fetchone()[0]
 
     # 5. All-time funding and fees (with optional tracking_start override)
-    tracking_filter = ""
+    # Use bound parameters only — never interpolate user/DB strings into SQL.
     tracking_date = ""
+    tracking_filter = ""
+    tracking_params: list[str] = []
     if tracking_start:
-        tracking_date = tracking_start
-        tracking_filter = f"AND ts >= (strftime('%s', '{tracking_start}') * 1000)"
+        try:
+            tracking_date = _parse_ymd_strict(tracking_start)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail="tracking_start must be a valid YYYY-MM-DD date",
+            ) from e
+        tracking_filter = " AND ts >= (strftime('%s', ?) * 1000)"
+        tracking_params = [tracking_date]
     elif snap and snap["tracking_start_date"]:
-        tracking_date = snap["tracking_start_date"]
-        tracking_filter = (
-            f"AND ts >= (strftime('%s', '{snap['tracking_start_date']}') * 1000)"
-        )
+        raw_td = snap["tracking_start_date"]
+        try:
+            tracking_date = _parse_ymd_strict(str(raw_td))
+        except ValueError as e:
+            raise HTTPException(
+                status_code=500,
+                detail="Invalid tracking_start_date stored in portfolio snapshot",
+            ) from e
+        tracking_filter = " AND ts >= (strftime('%s', ?) * 1000)"
+        tracking_params = [tracking_date]
 
     funding_alltime = db.execute(
         f"""
         SELECT COALESCE(SUM(amount), 0) FROM pm_cashflows
-        WHERE cf_type = 'FUNDING' {tracking_filter}
-        """
+        WHERE cf_type = 'FUNDING'{tracking_filter}
+        """,
+        tracking_params,
     ).fetchone()[0]
 
     fees_alltime = db.execute(
         f"""
         SELECT COALESCE(SUM(amount), 0) FROM pm_cashflows
-        WHERE cf_type = 'FEE' {tracking_filter}
-        """
+        WHERE cf_type = 'FEE'{tracking_filter}
+        """,
+        tracking_params,
     ).fetchone()[0]
 
     # Build equity_by_account
@@ -114,9 +138,10 @@ def portfolio_overview(
         total_equity += eq
 
     # Use snapshot values if available, else compute from components
-    daily_change = snap["daily_change_usd"] if snap else 0.0
-    apr = snap["apr_daily"] if snap else 0.0
-    total_upnl = snap["total_unrealized_pnl"] if snap else 0.0
+    # Snapshot REAL columns may be NULL — treat as 0.0 for math / Pydantic
+    daily_change = float(snap["daily_change_usd"] or 0.0) if snap else 0.0
+    apr = float(snap["apr_daily"] or 0.0) if snap else 0.0
+    total_upnl = float(snap["total_unrealized_pnl"] or 0.0) if snap else 0.0
     snap_ts = snap["ts"] if snap else None
 
     # Override total_equity from snapshot if no live account data

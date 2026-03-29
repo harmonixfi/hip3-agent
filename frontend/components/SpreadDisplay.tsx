@@ -25,8 +25,8 @@ export default function SpreadDisplay({ subPairs, legs }: Props) {
         <table className="data-table">
           <thead>
             <tr>
-              <th>Spot Leg</th>
-              <th>Perp Leg</th>
+              <th>Long Leg</th>
+              <th>Short Leg</th>
               <th className="text-right">Entry Spread</th>
               <th className="text-right">Exit Spread</th>
               <th className="text-right">Spread P&L</th>
@@ -39,10 +39,10 @@ export default function SpreadDisplay({ subPairs, legs }: Props) {
               return (
                 <tr key={i}>
                   <td className="text-gray-400 text-xs">
-                    {getLegLabel(sp.spot_leg_id)}
+                    {getLegLabel(sp.long_leg_id)}
                   </td>
                   <td className="text-gray-400 text-xs">
-                    {getLegLabel(sp.perp_leg_id)}
+                    {getLegLabel(sp.short_leg_id)}
                   </td>
                   <td className="text-right tabular-nums">
                     {formatBps(sp.entry_spread_bps)}

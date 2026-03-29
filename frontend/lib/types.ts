@@ -29,8 +29,8 @@ export interface PortfolioOverview {
 // ============================================================
 
 export interface SubPair {
-  spot_leg_id: string;
-  perp_leg_id: string;
+  long_leg_id: string;
+  short_leg_id: string;
   entry_spread_bps: number;
   exit_spread_bps: number;
   spread_pnl_bps: number;

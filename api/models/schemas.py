@@ -54,8 +54,8 @@ class LegDetail(BaseModel):
 
 
 class SubPairSpread(BaseModel):
-    spot_leg_id: str
-    perp_leg_id: str
+    long_leg_id: str
+    short_leg_id: str
     entry_spread_bps: Optional[float] = None
     exit_spread_bps: Optional[float] = None
     spread_pnl_bps: Optional[float] = None

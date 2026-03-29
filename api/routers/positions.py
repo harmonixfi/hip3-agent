@@ -95,8 +95,8 @@ def _build_position_summary(
     for sr in spread_rows:
         sub_pairs.append(
             SubPairSpread(
-                spot_leg_id=sr["long_leg_id"],
-                perp_leg_id=sr["short_leg_id"],
+                long_leg_id=sr["long_leg_id"],
+                short_leg_id=sr["short_leg_id"],
                 entry_spread_bps=(
                     round(sr["entry_spread"] * 10000, 1) if sr["entry_spread"] is not None else None
                 ),

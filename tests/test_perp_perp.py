@@ -8,8 +8,12 @@ all work correctly for perp-long + perp-short positions.
 from __future__ import annotations
 
 import sqlite3
+import sys
 import tempfile
 from pathlib import Path
+
+ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT))
 
 
 # ---------------------------------------------------------------------------

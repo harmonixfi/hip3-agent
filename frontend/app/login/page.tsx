@@ -1,12 +1,25 @@
 "use client";
 
-import { useActionState } from "react";
+import { useState, useTransition } from "react";
 import { login, type LoginState } from "./actions";
 
-const initialState: LoginState = { error: "" };
-
 export default function LoginPage() {
-  const [state, formAction, pending] = useActionState(login, initialState);
+  const [error, setError] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  function handleSubmit(formData: FormData) {
+    setError("");
+    startTransition(async () => {
+      try {
+        const result: LoginState = await login(formData);
+        if (result.error) {
+          setError(result.error);
+        }
+      } catch {
+        // Successful login calls redirect(), which throws — navigation handles it
+      }
+    });
+  }
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
@@ -17,7 +30,7 @@ export default function LoginPage() {
             <p className="text-sm text-gray-400 mt-1">Enter password to continue</p>
           </div>
 
-          <form action={formAction} className="space-y-4">
+          <form action={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="password" className="sr-only">Password</label>
               <input
@@ -31,16 +44,16 @@ export default function LoginPage() {
               />
             </div>
 
-            {state?.error && (
-              <p role="alert" className="text-red-400 text-sm">{state.error}</p>
+            {error && (
+              <p role="alert" className="text-red-400 text-sm">{error}</p>
             )}
 
             <button
               type="submit"
-              disabled={pending}
+              disabled={isPending}
               className="w-full bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 px-4 rounded transition-colors"
             >
-              {pending ? "Checking..." : "Enter"}
+              {isPending ? "Checking..." : "Enter"}
             </button>
           </form>
         </div>

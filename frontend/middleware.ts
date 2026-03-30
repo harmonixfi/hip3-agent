@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac } from "crypto";
+import { makeSessionToken } from "@/lib/session-token";
 
-function makeSessionToken(password: string): string {
-  return createHmac("sha256", password).update(password).digest("hex");
-}
-
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public paths — never gate these
@@ -23,7 +19,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const expectedToken = makeSessionToken(password);
+  const expectedToken = await makeSessionToken(password);
   const sessionCookie = request.cookies.get("auth_session")?.value;
 
   if (sessionCookie !== expectedToken) {

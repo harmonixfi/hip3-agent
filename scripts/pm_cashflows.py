@@ -274,6 +274,22 @@ def _is_spot_inst_id(inst_id: str) -> bool:
     return "/" in str(inst_id or "")
 
 
+def _hl_norm_dex(d: str) -> str:
+    return str(d or "").strip().lower()
+
+
+def _hl_row_dex_from_coin(raw_coin: str) -> str:
+    """Dex namespace encoded in HL coin strings, e.g. 'hyna:LINK' -> 'hyna', 'LINK' -> '' (native).
+
+    Must match pm_legs inst_id dex from split_hyperliquid_inst_id so we do not attach the same
+    userFunding row to both a builder perp leg and a native leg for the same underlying.
+    """
+    raw = str(raw_coin or "").strip()
+    if ":" in raw:
+        return raw.split(":", 1)[0].strip().lower()
+    return ""
+
+
 def _load_hyperliquid_targets(con: sqlite3.Connection) -> Dict[str, Dict[str, Dict[str, Dict[str, str]]]]:
     """Return account_id -> dex -> coin -> target metadata for OPEN managed Hyperliquid perp legs.
 
@@ -324,6 +340,9 @@ def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUI
 
     Funding/fee history is fetched in time windows so 15-day report metrics are
     not based on a single truncated response.
+
+    Rows are only mapped to a managed leg when the coin's namespace matches that leg's dex
+    (native = unprefixed coin); otherwise the same API line would double-count across dex queries.
     """
 
     targets_by_account = _load_hyperliquid_targets(con)
@@ -368,6 +387,8 @@ def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUI
                                 amt = r.get("funding") or r.get("usdc") or r.get("payment")
 
                             coin = strip_coin_namespace(raw_coin)
+                            if _hl_norm_dex(dex) != _hl_row_dex_from_coin(raw_coin):
+                                continue
                             target = coin_targets.get(coin)
                             if target is None:
                                 continue
@@ -434,6 +455,8 @@ def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUI
 
                             raw_coin = str(r.get("coin") or r.get("asset") or "")
                             coin = strip_coin_namespace(raw_coin)
+                            if _hl_norm_dex(dex) != _hl_row_dex_from_coin(raw_coin):
+                                continue
                             target = coin_targets.get(coin)
                             if target is None:
                                 continue

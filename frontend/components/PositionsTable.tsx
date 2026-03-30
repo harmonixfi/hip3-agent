@@ -73,6 +73,30 @@ export default function PositionsTable({ positions }: Props) {
     );
   }
 
+  function TooltipHeader({ label, tooltip }: { label: string; tooltip: string }) {
+    return (
+      <th>
+        <span className="relative group inline-flex items-center gap-1">
+          <span className="border-b border-dotted border-gray-500 cursor-help">{label}</span>
+          <svg
+            className="w-3 h-3 text-gray-500 group-hover:text-gray-300 transition-colors cursor-help"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 2a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-.25 3.5h.5a.75.75 0 0 1 .75.75v3.5a.25.25 0 0 0 .25.25h.25v1h-3v-1h.25a.25.25 0 0 0 .25-.25v-2.5a.25.25 0 0 0-.25-.25H6.5v-1h1.25z" />
+          </svg>
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 hidden group-hover:block pointer-events-none">
+            <div className="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-xs text-gray-200 whitespace-pre-line w-64 shadow-lg">
+              {tooltip}
+            </div>
+            <div className="w-2 h-2 bg-gray-900 border-r border-b border-gray-700 rotate-45 mx-auto -mt-1" />
+          </div>
+        </span>
+      </th>
+    );
+  }
+
   return (
     <div className="card">
       <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">
@@ -88,8 +112,14 @@ export default function PositionsTable({ positions }: Props) {
               <SortHeader label="uPnL" sortId="unrealized_pnl" />
               <SortHeader label="Funding" sortId="funding_earned" />
               <SortHeader label="Carry APR" sortId="carry_apr" />
-              <SortHeader label="Exit Spread" sortId="exit_spread" />
-              <th>Spread P&L</th>
+              <TooltipHeader
+                label="Exit Spread"
+                tooltip={`Exit Spread = (spot_bid / perp_ask) - 1\nMeasures the current basis cost to close the position.\nNegative = you'd lose that many bps on the round-trip.`}
+              />
+              <TooltipHeader
+                label="Spread P&L"
+                tooltip={`Spread P&L = exit_spread - entry_spread (in bps)\nPositive = spread narrowed since entry (profit).\nNegative = spread widened since entry (loss).`}
+              />
             </tr>
           </thead>
           <tbody>

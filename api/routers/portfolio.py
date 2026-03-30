@@ -71,7 +71,8 @@ def portfolio_overview(
         "SELECT COUNT(*) FROM pm_positions WHERE status IN ('OPEN', 'PAUSED')"
     ).fetchone()[0]
 
-    # 4. Funding today (UTC day)
+    # 4. Funding today — calendar day in UTC+0 only (not host local TZ).
+    # SQLite 'now' is UTC; do not add 'localtime' here.
     today_start_sql = "strftime('%s', 'now', 'start of day') * 1000"
     funding_today = db.execute(
         f"""

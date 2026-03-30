@@ -44,7 +44,7 @@ HL API: spotMeta   -->  backfill_fills.py     -> portfolio.py
 
 ### `scripts/pm_cashflows.py`
 - **Schedule**: Hourly (via existing cron, not in Docker crontab — runs separately)
-- **Input**: HL API `userFillsByTime` funding events
+- **Input (Hyperliquid)**: HL `/info` POST — `userFunding` (windows by time) → **FUNDING**; `userFillsByTime` → per-fill **`fee`** field → **FEE** (stored negative). Other venues have their own ingest paths inside the same script.
 - **Output table**: `pm_cashflows` — FUNDING, FEE, DEPOSIT, WITHDRAW events per position/leg
 - **Used for**: Funding earned, Fees paid, Carry APR, Net P&L
 
@@ -125,6 +125,48 @@ HL API: spotMeta   -->  backfill_fills.py     -> portfolio.py
 | `net_pnl_alltime_usd` | funding + fees | **FUNDING SUMMARY** Net P&L |
 | `total_unrealized_pnl` | `pm_legs` (sum unrealized_pnl) | "uPnL $X.XX" |
 | `open_positions_count` | `pm_positions` (status != CLOSED) | "N open positions" |
+
+#### Funding Summary card — calculation, data source, and API
+
+The **Funding Summary** panel (`frontend/components/FundingSummary.tsx`) is driven entirely by **`GET /api/portfolio/overview`** (see `api/routers/portfolio.py`). The frontend maps JSON fields as follows:
+
+| UI label | Response field | Type |
+|----------|----------------|------|
+| Funding Today | `funding_today_usd` | `float` |
+| Funding All-Time | `funding_alltime_usd` | `float` |
+| Fees All-Time | `fees_alltime_usd` | `float` (typically ≤ 0) |
+| Net P&L | `net_pnl_alltime_usd` | `float` |
+| Footer “Since …” | `tracking_start_date` | `YYYY-MM-DD` string |
+
+**Formulas (server-side)**
+
+**Timezone contract (Funding Summary):** All “day” boundaries for **Funding Today** and the **Since** date semantics are **UTC+0** (UTC calendar dates), not the viewer’s or server’s local timezone. Manual SQL / CSV exports must use the same UTC “start of day” if you want parity with the dashboard.
+
+- **Funding Today** — Sum of `pm_cashflows.amount` where `cf_type = 'FUNDING'` and `ts` is on or after **UTC midnight of the current day**. Implemented with SQLite: `ts >= strftime('%s', 'now', 'start of day') * 1000` (SQLite `now` is UTC). This value is recomputed on each API request (not taken from `pm_portfolio_snapshots`).
+
+- **Funding All-Time** — `SUM(amount)` for `cf_type = 'FUNDING'` with `ts` ≥ **tracking start**. The default tracking start is `DEFAULT_TRACKING_START` (`"2026-01-15"` in `tracking/pipeline/portfolio.py`), persisted on hourly snapshots as `pm_portfolio_snapshots.tracking_start_date`. The API uses that stored date unless the query parameter **`tracking_start=YYYY-MM-DD`** is passed (validated), in which case that date bounds the sums instead.
+
+- **Fees All-Time** — Same time filter as Funding All-Time, but `cf_type = 'FEE'`. Hyperliquid ingest stores fees as **negative** USDC (`-abs(fee)` from each fill), so the rolled-up sum is usually negative.
+
+- **Net P&L (All-Time, funding + fees only)** —
+
+  `net_pnl_alltime_usd = funding_alltime_usd + fees_alltime_usd`
+
+  Example: funding `+165.39` and fees `-49.21` → net `+116.18`. This is **not** total portfolio P&L: it excludes spread / realized trade P&L and uPnL. For closed positions, **Net P&L** on `GET /api/positions/closed` uses a different formula (spread + funding + fees).
+
+**Ledger source (`pm_cashflows`)**
+
+- Rows are written by **`scripts/pm_cashflows.py`** (`ingest` command), scheduled hourly. For **Hyperliquid**, the script calls the HL **`/info`** POST API in time windows (per dex, including native `""` when spot legs exist):
+  - **`userFunding`** → events with `cf_type = 'FUNDING'` on **perp legs only** (USDC amount from the payload; signed as returned by the API). SPOT_PERP spot legs do not receive funding rows.
+  - **`userFillsByTime`** → each non-zero **`fee`** → `cf_type = 'FEE'` (stored negative). Perp fills attach to the SHORT perp leg; spot fills (including `@{index}` coins) resolve via **`spotMeta`** the same way as `fill_ingester` and attach to the LONG spot leg (`inst_id` like `HYPE/USDC`).
+
+See `ingest_hyperliquid` in `scripts/pm_cashflows.py` and `tracking/pipeline/hl_cashflow_attribution.py` for dex/coin guards and fee resolution.
+
+**Note:** `pm_fills` also stores per-fill **`fee`** for display and analytics; that is separate from the **`pm_cashflows`** FEE ledger (no duplicate rows in `pm_cashflows` for the same fill—dedupe is by venue/account/ts/type/amount/description; spot vs perp legs use different `leg_id`s).
+
+**Hourly snapshot overlap**
+
+`tracking/pipeline/portfolio.py` also computes `total_funding_today`, `total_funding_alltime`, and `total_fees_alltime` into **`pm_portfolio_snapshots`** using the same conceptual definitions (Python UTC day boundary and the same tracking start string). The **overview API** uses live SQL for funding/fees as above so the dashboard stays consistent with the ledger without waiting for the next hourly bucket.
 
 ### `GET /api/positions` → Open Positions table
 | API Field | DB Source | Dashboard Column |
@@ -219,3 +261,146 @@ Hourly (separate cron):
 | `pm_cashflows` | pm_cashflows.py | positions, portfolio | cf_type, amount, position_id |
 | `prices_v3` | pull_position_prices + pull_hyperliquid_v3 | (via upnl/spreads) | inst_id, bid, ask, mid |
 | `instruments_v3` | pull_hyperliquid_v3 | — (FK target) | venue, inst_id |
+
+---
+
+## 6. Hyperliquid funding double-count (builder + native perp legs)
+
+### Symptom
+
+- **Funding Today / All-Time** (and any `SUM(amount)` on `pm_cashflows` where `cf_type = 'FUNDING'`) looks **~2×** too high when the registry has **two** open Hyperliquid perp legs for the same underlying: one on a **builder** dex (e.g. `hyna:LINK`) and one on **native** (e.g. `LINK`).
+- You may see **roughly twice** as many FUNDING rows per hour as you have distinct perp legs (e.g. 14/hour instead of 7).
+
+### Root cause
+
+Ingest (`scripts/pm_cashflows.py` → `ingest_hyperliquid`) calls HL `/info` **`userFunding`** (and `userFillsByTime` for fees) **once per dex** (native + each builder). Rows were matched to managed legs using only the **stripped** coin (e.g. `hyna:LINK` and `LINK` both became `LINK`). The **same** API line could therefore be stored on **both** the builder leg and the native leg. Dedupe in `insert_cashflow_events` did not catch this because `description` includes each leg’s `inst_id` and differs between rows.
+
+### Fix in code (ongoing ingest)
+
+Ingest now requires the **coin namespace** in the HL payload to match the leg’s **dex** from `pm_legs.inst_id` (same idea as `split_hyperliquid_inst_id` / `strip_coin_namespace`):
+
+- Unprefixed coin (e.g. `LINK`) → **native** leg only (`dex` empty).
+- Prefixed coin (e.g. `hyna:LINK`) → **that builder** leg only.
+
+Fees from fills use the same rule.
+
+### One-time migration: wipe HL funding/fees and backfill (run once)
+
+Historical bad rows stay in `pm_cashflows` until you rebuild them. The script **`scripts/reset_hyperliquid_cashflows.py`**:
+
+1. Deletes **all** rows with `venue = 'hyperliquid'` and `cf_type IN ('FUNDING','FEE')`.
+2. Calls **`scripts/hl_reset_backfill.py`** (`run_backfill`) — **not** `pm_cashflows.ingest_hyperliquid`, so the cron cashflow job is unchanged. That module spaces out `/info` POSTs and **retries with backoff** on HTTP **429** (rate limit); see **Rate limits during backfill** below.
+
+**Closed / past instruments:** the hourly job only maps **OPEN** legs. For a one-time reset, edit **`config/hl_cashflow_backfill_extra_targets.json`**: list `include_closed_inst_ids` (e.g. `xyz:CRCL`, `xyz:MSTR`, `XMR`) so **`CLOSED`** rows in `pm_legs` with those `inst_id` values are merged into targets. Optional **`manual_targets`** if there is no `pm_legs` row (provide `account_id` + `inst_id`; `position_id` / `leg_id` optional).
+
+#### Step-by-step (run in order from repo root)
+
+Paths below use the default DB `tracking/db/arbit_v3.db`. Change `--db` if yours differs.
+
+1. **Go to the project root**
+
+   ```bash
+   cd /path/to/hip3-agent
+   ```
+
+2. **Load environment** (Hyperliquid addresses / multi-wallet JSON live here)
+
+   ```bash
+   source .arbit_env
+   ```
+
+3. **Ensure `pm_legs` matches your book** (so ingest maps funding to the right legs). If you changed `config/positions.json` recently:
+
+   ```bash
+   .venv/bin/python scripts/pm.py sync-registry
+   .venv/bin/python scripts/pm.py list
+   ```
+
+   Skip if you already synced and positions are current.
+
+4. **Backup the SQLite file** (restore by copying the `.bak` back over the DB if needed)
+
+   ```bash
+   cp tracking/db/arbit_v3.db tracking/db/arbit_v3.db.bak
+   ```
+
+5. **Dry run** — prints how many HL `FUNDING`+`FEE` rows would be removed; does **not** delete or call the API
+
+   ```bash
+   .venv/bin/python scripts/reset_hyperliquid_cashflows.py --db tracking/db/arbit_v3.db --dry-run
+   ```
+
+6. **Delete + backfill** — actually removes those rows and refetches from Hyperliquid for the **default** window (**504h**)
+
+   ```bash
+   .venv/bin/python scripts/reset_hyperliquid_cashflows.py --db tracking/db/arbit_v3.db
+   ```
+
+   Wait for `OK: deleted …` and `OK: backfilled …`.
+
+   **Alternative (faster, less history):** only last **168h** (7 days) of funding/fees:
+
+   ```bash
+   .venv/bin/python scripts/reset_hyperliquid_cashflows.py --db tracking/db/arbit_v3.db --since-hours 168
+   ```
+
+   **Custom UTC range** (backfill from a specific start; end defaults to **now**):
+
+   ```bash
+   .venv/bin/python scripts/reset_hyperliquid_cashflows.py --db tracking/db/arbit_v3.db \
+       --start 2026-03-16T19:00:00Z
+   ```
+
+   Optional **`--end`** (ISO `...Z` or epoch **ms**): cap the window (e.g. historical replay). With **`--since-hours`** only, **`--end`** anchors “now” for that window instead of current time.
+
+   **Debug why `MIN(ts)` is still recent:** run with **`--verbose`** (logs to stderr: requested window, per-endpoint API errors, raw `userFunding` row counts vs rows accepted after leg/namespace filters, earliest timestamp seen in API payloads vs events queued, dedupe insert count):
+
+   ```bash
+   .venv/bin/python scripts/reset_hyperliquid_cashflows.py --db tracking/db/arbit_v3.db \
+       --start 2026-03-01T00:00:00Z --verbose
+   ```
+
+   **Rate limits during backfill:** `hl_reset_backfill.py` issues many `/info` calls (`userFunding`, `userFillsByTime` across time windows, accounts, and dexes). Hyperliquid may respond with **429 Too Many Requests**. Each POST goes through a **minimum interval** between calls and **automatic retries** on 429 with exponential backoff and jitter; if the response includes **`Retry-After`**, that hint is used (plus a small random delay).
+
+   Optional environment variables (tune if backfill still hits 429 or you want it slower):
+
+   | Variable | Default | Purpose |
+   |----------|---------|---------|
+   | `HL_RESET_BACKFILL_MIN_INTERVAL_S` | `0.35` | Minimum seconds between successive `/info` POSTs in this backfill. |
+   | `HL_RESET_BACKFILL_MAX_RETRIES` | `12` | Max retry attempts per request when the server returns 429. |
+
+7. **Verify** — duplicate check should return **no rows** (empty result = good):
+
+   ```bash
+   sqlite3 tracking/db/arbit_v3.db
+   ```
+
+   ```sql
+   SELECT venue, account_id, ts, amount, cf_type, COUNT(*) AS n
+   FROM pm_cashflows
+   WHERE venue = 'hyperliquid' AND cf_type IN ('FUNDING', 'FEE')
+   GROUP BY venue, account_id, ts, amount, cf_type
+   HAVING COUNT(*) > 1;
+   ```
+
+   Type `.quit` to exit `sqlite3`.
+
+8. **Ongoing:** keep your usual cron / manual **`pm_cashflows.py ingest`** with **`hyperliquid`** in `--venues` — do **not** re-run the reset script unless you want another full wipe.
+
+**Staging / testnet:** Use your DB path in every `--db` argument. Set **`HYPERLIQUID_ADDRESS`** / **`HYPERLIQUID_ACCOUNTS_JSON`** for that environment.
+
+**API host:** Defaults to **mainnet** (`https://api.hyperliquid.xyz`). True HL testnet needs a testnet `.../info` base URL in your deployment.
+
+### Quick SQL checks
+
+Approximate hourly FUNDING row counts (Hyperliquid):
+
+```sql
+SELECT strftime('%Y-%m-%d %H', ts/1000, 'unixepoch') AS hour_utc, COUNT(*) AS n
+FROM pm_cashflows
+WHERE venue = 'hyperliquid' AND cf_type = 'FUNDING'
+  AND ts >= (strftime('%s','now') - 86400) * 1000
+GROUP BY 1 ORDER BY 1;
+```
+
+After cleanup + fixed ingest, **n per hour** should align with the number of **economically distinct** perp legs (one funding line per leg per hour per HL behavior), not double that when HYNA+NATIVE duplicates were present.

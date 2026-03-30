@@ -1,0 +1,5 @@
+{
+  "comment": "One-time HL cashflow reset: include CLOSED legs for these inst_ids so historical funding maps to a leg. Edit list; empty array = OPEN legs only.",
+  "include_closed_inst_ids": ["xyz:CRCL", "xyz:MSTR", "XMR"],
+  "manual_targets": []
+}

@@ -38,6 +38,28 @@ def _ts_to_iso(ts_ms: Optional[int]) -> Optional[str]:
     return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).isoformat()
 
 
+def _gross_notional_usd_from_leg_rows(leg_rows: list[sqlite3.Row]) -> Optional[float]:
+    """Sum abs(size * price) per leg (mark gross notional). pm_legs has no total_balance.
+
+    Price: current_price, else avg_entry_price from pm_entry_prices join, else pm_legs.entry_price.
+    Skips legs missing both price and size. Aligns with report script fallback logic.
+    """
+    total = 0.0
+    found_any = False
+    for lr in leg_rows:
+        px = lr["current_price"]
+        if px is None:
+            px = lr["avg_entry_price"]
+        if px is None:
+            px = lr["entry_price"]
+        sz = lr["size"]
+        if px is None or sz is None:
+            continue
+        total += abs(float(px) * float(sz))
+        found_any = True
+    return total if found_any else None
+
+
 def _build_position_summary(
     pos: sqlite3.Row, db: sqlite3.Connection
 ) -> PositionSummary:
@@ -54,9 +76,7 @@ def _build_position_summary(
 
     base = meta.get("base", position_id)
     strategy = meta.get("strategy_type", pos["strategy"] if "strategy" in pos.keys() else "SPOT_PERP")
-    amount_usd = meta.get("amount_usd")
 
-    # Legs
     leg_rows = db.execute(
         """
         SELECT l.*, ep.avg_entry_price
@@ -66,6 +86,14 @@ def _build_position_summary(
         """,
         (position_id,),
     ).fetchall()
+
+    # OPEN/PAUSED/EXITING: amount = sum of abs(size * price) across legs (no total_balance on pm_legs).
+    # CLOSED keeps registry amount_usd for historical reporting.
+    status = pos["status"]
+    if status == "CLOSED":
+        amount_usd = meta.get("amount_usd")
+    else:
+        amount_usd = _gross_notional_usd_from_leg_rows(leg_rows)
 
     legs = []
     total_upnl = 0.0
@@ -231,7 +259,7 @@ def list_closed_positions(
                 opened_at=_ts_to_iso(pos["created_at_ms"]),
                 closed_at=_ts_to_iso(pos["closed_at_ms"]),
                 duration_days=duration_days,
-                amount_usd=round(amount_usd, 2) if amount_usd is not None else None,
+                amount_usd=round(amount_usd, 2) if amount_usd else None,
                 realized_spread_pnl=round(realized_spread, 2),
                 total_funding_earned=round(funding, 2),
                 total_fees_paid=round(fees, 2),

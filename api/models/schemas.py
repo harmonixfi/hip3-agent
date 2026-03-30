@@ -66,7 +66,13 @@ class PositionSummary(BaseModel):
     base: str
     strategy: str
     status: str
-    amount_usd: Optional[float] = None
+    amount_usd: Optional[float] = Field(
+        None,
+        description=(
+            "Open positions: sum of abs(size * price) per leg (current_price, else VWAP, else entry). "
+            "CLOSED: registry meta amount_usd."
+        ),
+    )
     unrealized_pnl: Optional[float] = None
     unrealized_pnl_pct: Optional[float] = None
     funding_earned: Optional[float] = None

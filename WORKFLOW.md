@@ -1,6 +1,6 @@
 # WORKFLOW.md - Harmonix Daily Delta-Neutral Workflow
 
-Last updated: 2026-03-11
+Last updated: 2026-03-30
 Owner: Harmonix
 
 ---
@@ -20,6 +20,24 @@ Owner: Harmonix
 
 ## 2) Canonical data flow
 
+### Step 0 — Position registry → DB (`pm.py sync-registry`)
+
+**Source of truth:** `config/positions.json` → **`pm_positions` / `pm_legs`** in SQLite.
+
+| Run `sync-registry` | Skip it |
+|----------------------|--------|
+| After any registry edit: new position, leg/qty, `wallet_label`, `status` (OPEN / PAUSED / CLOSED), rebalance | Ordinary “refresh market data” days with **no** JSON changes |
+
+```bash
+source .arbit_env
+.venv/bin/python scripts/pm.py sync-registry
+.venv/bin/python scripts/pm.py list
+```
+
+**Order:** Run **before** `pull_positions_v3` and the rest of the pull/compute chain so pulls and metrics target the right legs. It is **not** a substitute for `pipeline_hourly` or `pull_positions_v3`.
+
+Playbook: `docs/playbook-position-management.md`.
+
 ### Step A - Pull market and funding inputs
 
 Use the local Harmonix runtime, cloned from the Arbit baseline, as the workflow skeleton:
@@ -27,15 +45,19 @@ Use the local Harmonix runtime, cloned from the Arbit baseline, as the workflow 
 1. `scripts/pull_hyperliquid_v3.py`
 2. `scripts/pull_loris_funding.py`
 3. `scripts/pull_positions_v3.py --db tracking/db/arbit_v3.db --venues hyperliquid`
-4. `scripts/pm_cashflows.py ingest --venues hyperliquid`
-5. `scripts/equity_daily.py snapshot`
+4. `scripts/pull_position_prices.py` — bid/ask (and mids where applicable) for every open leg’s `inst_id`; feeds price rows used by uPnL and spread math
+5. `scripts/pm_cashflows.py ingest --venues hyperliquid`
+6. `scripts/equity_daily.py snapshot`
+7. `scripts/pipeline_hourly.py` — ingest fills (HL), VWAP entry prices, unrealized PnL, entry/exit spreads, and `pm_portfolio_snapshots` (dashboard / APR context). Not the same as `pull_position_prices.py`; run both when doing a full manual pass
 
 Intent:
 - market state from Hyperliquid runtime
 - funding history for persistence, carry resolution, and candidate scoring
-- latest managed position state
+- latest managed position and account snapshots (`pull_positions_v3`)
+- fresh leg marks for MTM (`pull_position_prices`; production often runs this on a separate ~5m cron — see `docker/crontab`)
 - realized funding/fee ledger updates
 - latest tracked equity context
+- recomputed portfolio metrics in SQLite (`pipeline_hourly`)
 
 Bootstrap note:
 - `config/positions.json` is intentionally reset to an empty registry in this workspace.
@@ -264,22 +286,32 @@ If script output and chat template differ, the agent must treat the feature spec
 
 ## 5) Runbook
 
-Daily manual run shape:
+Daily manual run shape (adjust `cd` to your clone):
 
 ```bash
 cd /home/node/.openclaw/workspace-harmonix-delta-neutral
 source .arbit_env
 
+# 0) Only if you changed config/positions.json since last sync:
+# .venv/bin/python scripts/pm.py sync-registry && .venv/bin/python scripts/pm.py list
+
 # 1) pull market/funding inputs
 .venv/bin/python scripts/pull_hyperliquid_v3.py
 .venv/bin/python scripts/pull_loris_funding.py
 
-# 2) sync positions + realized cashflows
+# 2) sync positions + realized cashflows + equity snapshot
 .venv/bin/python scripts/pull_positions_v3.py --db tracking/db/arbit_v3.db --venues hyperliquid
 .venv/bin/python scripts/pm_cashflows.py ingest --venues hyperliquid
 .venv/bin/python scripts/equity_daily.py snapshot
 
-# 3) generate operator-grade sections
+# 3) leg bid/ask prices (open legs only — required for sensible uPnL/spreads; omitted from older runbooks)
+.venv/bin/python scripts/pull_position_prices.py
+
+# 4) hourly compute: fills → entry VWAP → uPnL → spreads → portfolio snapshot
+.venv/bin/python scripts/pipeline_hourly.py
+# Recompute metrics only (no new fill ingest): .venv/bin/python scripts/pipeline_hourly.py --skip-ingest
+
+# 5) generate operator-grade sections
 .venv/bin/python scripts/report_daily_funding_with_portfolio.py --section portfolio-summary
 .venv/bin/python scripts/report_daily_funding_with_portfolio.py --section rotation-general --top 10
 .venv/bin/python scripts/report_daily_funding_with_portfolio.py --section rotation-equities --top 10

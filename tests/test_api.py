@@ -322,6 +322,8 @@ def test_list_positions():
     assert "legs" in pos
     assert "sub_pairs" in pos
     assert pos["status"] == "OPEN"
+    # amount_usd for OPEN = sum abs(size * current_price) per leg (pm_legs has no total_balance)
+    assert pos["amount_usd"] == 12100.0  # 0.1*60500 + 0.1*60500
 
     os.unlink(db_path)
     print("PASS: test_list_positions")

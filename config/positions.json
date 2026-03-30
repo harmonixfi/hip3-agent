@@ -84,7 +84,7 @@
     "position_id": "pos_xyz_ORCL",
     "strategy_type": "SPOT_PERP",
     "base": "ORCL",
-    "status": "OPEN",
+    "status": "CLOSED",
     "legs": [
       {
         "leg_id": "pos_xyz_ORCL_SPOT",
@@ -110,7 +110,7 @@
     "position_id": "pos_xyz_MU",
     "strategy_type": "SPOT_PERP",
     "base": "MU",
-    "status": "OPEN",
+    "status": "CLOSED",
     "legs": [
       {
         "leg_id": "pos_xyz_MU_SPOT",
@@ -136,7 +136,7 @@
     "position_id": "pos_xyz_CRCL",
     "strategy_type": "SPOT_PERP",
     "base": "CRCL",
-    "status": "OPEN",
+    "status": "CLOSED",
     "legs": [
       {
         "leg_id": "pos_xyz_CRCL_SPOT",
@@ -189,14 +189,14 @@
     "strategy_type": "SPOT_PERP",
     "base": "GOLD",
     "status": "OPEN",
-    "amount_usd": 2992.37,
+    "amount_usd": 2971.42,
     "legs": [
       {
         "leg_id": "pos_xyz_GOLD_SPOT",
         "venue": "hyperliquid",
         "inst_id": "XAUT0/USDC",
         "side": "LONG",
-        "qty": 0.66,
+        "qty": 0.6608,
         "qty_type": "token",
         "wallet_label": "alt"
       },
@@ -205,7 +205,7 @@
         "venue": "hyperliquid",
         "inst_id": "xyz:GOLD",
         "side": "SHORT",
-        "qty": 0.66,
+        "qty": 0.6608,
         "qty_type": "token",
         "wallet_label": "alt"
       }
@@ -215,24 +215,107 @@
     "position_id": "pos_hyna_HYPE",
     "strategy_type": "SPOT_PERP",
     "base": "HYPE",
-    "status": "CLOSED",
-    "amount_usd": 14606.00,
+    "status": "OPEN",
+    "amount_usd": 5071.13,
     "legs": [
       {
         "leg_id": "pos_hyna_HYPE_SPOT",
         "venue": "hyperliquid",
-        "inst_id": "HYPE",
+        "inst_id": "HYPE/USDC",
         "side": "LONG",
-        "qty": 215.08,
-        "qty_type": "token"
+        "qty": 126.98,
+        "qty_type": "token",
+        "wallet_label": "alt"
       },
       {
-        "leg_id": "pos_hyna_HYPE_PERP",
+        "leg_id": "pos_hyna_HYPE_PERP_HYNA",
         "venue": "hyperliquid",
         "inst_id": "hyna:HYPE",
         "side": "SHORT",
-        "qty": 215.08,
-        "qty_type": "token"
+        "qty": 89.48,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      },
+      {
+        "leg_id": "pos_hyna_HYPE_PERP_NATIVE",
+        "venue": "hyperliquid",
+        "inst_id": "HYPE",
+        "side": "SHORT",
+        "qty": 37.50,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      }
+    ]
+  },
+  {
+    "position_id": "pos_hyna_FARTCOIN",
+    "strategy_type": "SPOT_PERP",
+    "base": "FARTCOIN",
+    "status": "OPEN",
+    "amount_usd": 4917.30,
+    "legs": [
+      {
+        "leg_id": "pos_hyna_FARTCOIN_SPOT",
+        "venue": "hyperliquid",
+        "inst_id": "UFART/USDC",
+        "side": "LONG",
+        "qty": 28646.6,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      },
+      {
+        "leg_id": "pos_hyna_FARTCOIN_PERP_HYNA",
+        "venue": "hyperliquid",
+        "inst_id": "hyna:FARTCOIN",
+        "side": "SHORT",
+        "qty": 20054.6,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      },
+      {
+        "leg_id": "pos_hyna_FARTCOIN_PERP_NATIVE",
+        "venue": "hyperliquid",
+        "inst_id": "FARTCOIN",
+        "side": "SHORT",
+        "qty": 8592.0,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      }
+    ]
+  },
+  {
+    "position_id": "pos_multi_LINK",
+    "strategy_type": "SPOT_PERP",
+    "base": "LINK",
+    "status": "OPEN",
+    "amount_usd": 4820.92,
+    "legs": [
+      {
+        "leg_id": "pos_multi_LINK_SPOT",
+        "venue": "hyperliquid",
+        "inst_id": "LINK0/USDC",
+        "side": "LONG",
+        "qty": 560.0,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      },
+      {
+        "leg_id": "pos_multi_LINK_PERP_NATIVE",
+        "venue": "hyperliquid",
+        "inst_id": "LINK",
+        "side": "SHORT",
+        "qty": 336.0,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      },
+      {
+        "leg_id": "pos_multi_LINK_PERP_HYNA",
+        "venue": "hyperliquid",
+        "inst_id": "hyna:LINK",
+        "side": "SHORT",
+        "qty": 224.0,
+        "qty_type": "token",
+        "wallet_label": "alt"
       }
     ]
   }

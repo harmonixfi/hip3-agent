@@ -287,7 +287,9 @@ Fees from fills use the same rule.
 Historical bad rows stay in `pm_cashflows` until you rebuild them. The script **`scripts/reset_hyperliquid_cashflows.py`**:
 
 1. Deletes **all** rows with `venue = 'hyperliquid'` and `cf_type IN ('FUNDING','FEE')`.
-2. Calls **`ingest_hyperliquid`** once with `--since-hours` (default matches `pm_cashflows` ingest, e.g. **504h**).
+2. Calls **`scripts/hl_reset_backfill.py`** (`run_backfill`) — **not** `pm_cashflows.ingest_hyperliquid`, so the cron cashflow job is unchanged. That module spaces out `/info` POSTs and **retries with backoff** on HTTP **429** (rate limit); see **Rate limits during backfill** below.
+
+**Closed / past instruments:** the hourly job only maps **OPEN** legs. For a one-time reset, edit **`config/hl_cashflow_backfill_extra_targets.json`**: list `include_closed_inst_ids` (e.g. `xyz:CRCL`, `xyz:MSTR`, `XMR`) so **`CLOSED`** rows in `pm_legs` with those `inst_id` values are merged into targets. Optional **`manual_targets`** if there is no `pm_legs` row (provide `account_id` + `inst_id`; `position_id` / `leg_id` optional).
 
 #### Step-by-step (run in order from repo root)
 
@@ -339,6 +341,31 @@ Paths below use the default DB `tracking/db/arbit_v3.db`. Change `--db` if yours
    ```bash
    .venv/bin/python scripts/reset_hyperliquid_cashflows.py --db tracking/db/arbit_v3.db --since-hours 168
    ```
+
+   **Custom UTC range** (backfill from a specific start; end defaults to **now**):
+
+   ```bash
+   .venv/bin/python scripts/reset_hyperliquid_cashflows.py --db tracking/db/arbit_v3.db \
+       --start 2026-03-16T19:00:00Z
+   ```
+
+   Optional **`--end`** (ISO `...Z` or epoch **ms**): cap the window (e.g. historical replay). With **`--since-hours`** only, **`--end`** anchors “now” for that window instead of current time.
+
+   **Debug why `MIN(ts)` is still recent:** run with **`--verbose`** (logs to stderr: requested window, per-endpoint API errors, raw `userFunding` row counts vs rows accepted after leg/namespace filters, earliest timestamp seen in API payloads vs events queued, dedupe insert count):
+
+   ```bash
+   .venv/bin/python scripts/reset_hyperliquid_cashflows.py --db tracking/db/arbit_v3.db \
+       --start 2026-03-01T00:00:00Z --verbose
+   ```
+
+   **Rate limits during backfill:** `hl_reset_backfill.py` issues many `/info` calls (`userFunding`, `userFillsByTime` across time windows, accounts, and dexes). Hyperliquid may respond with **429 Too Many Requests**. Each POST goes through a **minimum interval** between calls and **automatic retries** on 429 with exponential backoff and jitter; if the response includes **`Retry-After`**, that hint is used (plus a small random delay).
+
+   Optional environment variables (tune if backfill still hits 429 or you want it slower):
+
+   | Variable | Default | Purpose |
+   |----------|---------|---------|
+   | `HL_RESET_BACKFILL_MIN_INTERVAL_S` | `0.35` | Minimum seconds between successive `/info` POSTs in this backfill. |
+   | `HL_RESET_BACKFILL_MAX_RETRIES` | `12` | Max retry attempts per request when the server returns 429. |
 
 7. **Verify** — duplicate check should return **no rows** (empty result = good):
 

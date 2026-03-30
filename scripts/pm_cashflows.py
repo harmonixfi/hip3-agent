@@ -328,23 +328,10 @@ def _load_hyperliquid_targets(con: sqlite3.Connection) -> Dict[str, Dict[str, Di
 
 
 def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUID_DEFAULT_SINCE_HOURS) -> int:
-    """Ingest Hyperliquid realized funding + fees.
+    """Ingest Hyperliquid realized funding + fees (OPEN managed perp legs only).
 
-    Hyperliquid exposes these via public /info POST endpoints using only the user
-    address. Builder-deployed perp dexes share the same API surface but require
-    the appropriate `dex` name to scope the query.
-
-    We ingest (for managed Hyperliquid perp legs only):
-    - userFunding(startTime, endTime) -> FUNDING (USDC)
-    - userFillsByTime(startTime, endTime) -> FEE (USDC, negative)
-
-    Funding/fee history is fetched in time windows so 15-day report metrics are
-    not based on a single truncated response.
-
-    Rows are only mapped to a managed leg when the coin's namespace matches that leg's dex
-    (native = unprefixed coin); otherwise the same API line would double-count across dex queries.
+    See ``scripts/hl_reset_backfill.py`` for one-time backfill including CLOSED instruments.
     """
-
     targets_by_account = _load_hyperliquid_targets(con)
     if not targets_by_account:
         return 0
@@ -358,7 +345,6 @@ def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUI
     for account_id, targets_by_dex in targets_by_account.items():
         for dex, coin_targets in targets_by_dex.items():
             for win_start, win_end in windows:
-                # Funding payments
                 try:
                     rows = _hl_post(
                         {"type": "userFunding", "user": account_id, "startTime": int(win_start), "endTime": int(win_end)},
@@ -414,8 +400,6 @@ def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUI
                                         "coin": coin,
                                         "dex": dex or "",
                                         "inst_id": target["inst_id"],
-                                        # Hyperliquid userFunding `usdc` is already account-PnL signed.
-                                        # Do not flip again for SHORT legs.
                                         "pnl_sign": 1,
                                     },
                                 )
@@ -423,7 +407,6 @@ def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUI
                 except Exception:
                     pass
 
-                # Fees from fills
                 try:
                     fills = _hl_post(
                         {

@@ -9,7 +9,7 @@ function makeSessionToken(password: string): string {
 }
 
 export async function login(formData: FormData): Promise<{ error: string }> {
-  const submitted = formData.get("password") as string;
+  const submitted = (formData.get("password") ?? "") as string;
   const expected = process.env.DASHBOARD_PASSWORD;
 
   if (!expected) {

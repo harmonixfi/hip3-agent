@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -112,29 +113,142 @@ class HyperliquidPrivateConnector(PrivateConnectorBase):
                 "Hyperliquid config missing. Set HYPERLIQUID_ADDRESS or (fallback) ETHEREAL_ACCOUNT_ADDRESS."
             )
 
-    def fetch_account_snapshot(self, *, dex: Optional[str] = None) -> Dict:
+    def fetch_account_snapshot(
+        self,
+        *,
+        dex: Optional[str] = None,
+        builder_dexes: Optional[List[str]] = None,
+        exclude_spot_tokens: Optional[List[str]] = None,
+    ) -> Dict:
         use_dex = self.dex if dex is None else str(dex or "").strip()
+
+        # --- 1. Native perp margin ---
         st = post_info({"type": "clearinghouseState", "user": self.address}, dex=use_dex)
         if not isinstance(st, dict):
             raise RuntimeError("Unexpected Hyperliquid response (not dict)")
 
         ms = st.get("marginSummary") or {}
-        account_value = _to_float(ms.get("accountValue"))
+        perp_native = _to_float(ms.get("accountValue")) or 0.0
         total_margin_used = _to_float(ms.get("totalMarginUsed"))
 
         free = None
-        if account_value is not None and total_margin_used is not None:
-            free = account_value - total_margin_used
+        if perp_native and total_margin_used is not None:
+            free = perp_native - total_margin_used
+
+        # If no builder dexes requested, return simple snapshot (backward compat)
+        if not builder_dexes:
+            return {
+                "account_id": self.address,
+                "dex": use_dex,
+                "total_balance": perp_native or None,
+                "available_balance": free,
+                "margin_balance": perp_native or None,
+                "unrealized_pnl": None,
+                "position_value": _to_float(ms.get("totalNtlPos")),
+                "raw_json": st,
+            }
+
+        # --- 2. Builder dex perp margins ---
+        breakdown: Dict[str, Any] = {"perp_native": round(perp_native, 2)}
+        total_perp = perp_native
+
+        for bdex in builder_dexes:
+            time.sleep(0.3)
+            try:
+                bst = post_info(
+                    {"type": "clearinghouseState", "user": self.address}, dex=bdex
+                )
+                bms = (bst or {}).get("marginSummary") or {}
+                bval = _to_float(bms.get("accountValue")) or 0.0
+            except Exception:
+                bval = 0.0
+            breakdown[f"perp_{bdex}"] = round(bval, 2)
+            total_perp += bval
+
+        # --- 3. Spot balances ---
+        time.sleep(0.3)
+        spot_state = post_info(
+            {"type": "spotClearinghouseState", "user": self.address}, dex=""
+        )
+        balances = (spot_state or {}).get("balances") or []
+
+        time.sleep(0.3)
+        web_data = post_info({"type": "webData2", "user": self.address}, dex="")
+        spot_asset_ctxs = (web_data or {}).get("spotAssetCtxs") or []
+
+        time.sleep(0.3)
+        spot_meta = post_info({"type": "spotMeta"}, dex="")
+
+        # Build ctx price map: "@107" -> midPx
+        ctx_prices: Dict[str, float] = {}
+        for ctx in spot_asset_ctxs:
+            coin = ctx.get("coin", "")
+            mid = ctx.get("midPx")
+            if mid and mid != "N/A":
+                try:
+                    ctx_prices[coin] = float(mid)
+                except (ValueError, TypeError):
+                    pass
+
+        # Build token_index -> best universe.index (prefer USDC quote)
+        token_names: Dict[int, str] = {}
+        for t in (spot_meta or {}).get("tokens", []):
+            token_names[t["index"]] = t["name"]
+
+        universe = (spot_meta or {}).get("universe", [])
+        token_to_uni_index: Dict[int, int] = {}
+        for uni in universe:
+            tok_ids = uni.get("tokens", [])
+            uni_idx = uni.get("index")
+            if len(tok_ids) >= 2 and uni_idx is not None:
+                base_token_idx = tok_ids[0]
+                quote_name = token_names.get(tok_ids[1], "")
+                if base_token_idx not in token_to_uni_index or quote_name == "USDC":
+                    token_to_uni_index[base_token_idx] = uni_idx
+
+        # Value each balance
+        exclude_set = set(exclude_spot_tokens or [])
+        spot_tokens: Dict[str, float] = {}
+        spot_equity = 0.0
+        spot_excluded = 0.0
+
+        for b in balances:
+            coin = b.get("coin", "")
+            qty = _to_float(b.get("total")) or 0.0
+            token_idx = b.get("token")
+            if abs(qty) < 1e-12:
+                continue
+
+            if coin in ("USDC", "USDE", "USDH"):
+                px = 1.0
+            else:
+                uni_idx = token_to_uni_index.get(token_idx)
+                ref = f"@{uni_idx}" if uni_idx is not None else None
+                px = ctx_prices.get(ref, 0) if ref else 0
+
+            val = qty * px
+            spot_tokens[coin] = round(val, 2)
+
+            if coin in exclude_set:
+                spot_excluded += val
+            else:
+                spot_equity += val
+
+        breakdown["spot_equity"] = round(spot_equity, 2)
+        breakdown["spot_excluded"] = round(spot_excluded, 2)
+        breakdown["spot_tokens"] = spot_tokens
+
+        total_balance = total_perp + spot_equity
 
         return {
             "account_id": self.address,
             "dex": use_dex,
-            "total_balance": account_value,
+            "total_balance": round(total_balance, 2),
             "available_balance": free,
-            "margin_balance": account_value,
+            "margin_balance": round(total_perp, 2),
             "unrealized_pnl": None,
             "position_value": _to_float(ms.get("totalNtlPos")),
-            "raw_json": st,
+            "raw_json": breakdown,
         }
 
     def fetch_open_positions(self, *, dex: Optional[str] = None) -> List[Dict]:

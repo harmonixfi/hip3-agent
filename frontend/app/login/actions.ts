@@ -4,19 +4,26 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createHmac, timingSafeEqual } from "crypto";
 
+export interface LoginState {
+  error: string;
+}
+
 function makeSessionToken(password: string): string {
   return createHmac("sha256", password).update(password).digest("hex");
 }
 
-export async function login(formData: FormData): Promise<{ error: string }> {
+export async function login(
+  _prevState: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
   const submitted = (formData.get("password") ?? "") as string;
   const expected = process.env.DASHBOARD_PASSWORD;
 
   if (!expected) {
-    return { error: "Server misconfiguration: DASHBOARD_PASSWORD not set." };
+    return { error: "Authentication is not configured. Contact the admin." };
   }
 
-  const submittedBuf = Buffer.from(submitted ?? "");
+  const submittedBuf = Buffer.from(submitted);
   const expectedBuf = Buffer.from(expected);
 
   // Pad to same length before timingSafeEqual (it requires equal lengths)

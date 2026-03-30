@@ -35,6 +35,12 @@ from tracking.connectors.hyperliquid_private import (  # noqa: E402
     split_inst_id as split_hyperliquid_inst_id,
     strip_coin_namespace,
 )
+from tracking.pipeline.hl_cashflow_attribution import (  # noqa: E402
+    hl_fee_target_from_fill_coin,
+    hl_norm_dex as _hl_norm_dex,
+    hl_row_dex_from_coin as _hl_row_dex_from_coin,
+)
+from tracking.pipeline.spot_meta import fetch_spot_index_map  # noqa: E402
 from tracking.position_manager.cashflows import CashflowEvent, insert_cashflow_events, now_ms  # noqa: E402
 
 # Space out /info calls; HL returns 429 if we hammer many windows × dexes in a row.
@@ -92,21 +98,10 @@ def _is_spot_inst_id(inst_id: str) -> bool:
     return "/" in str(inst_id or "")
 
 
-def _hl_norm_dex(d: str) -> str:
-    return str(d or "").strip().lower()
-
-
 def _fmt_ms_utc(ms: int) -> str:
     import datetime as _dt
 
     return _dt.datetime.fromtimestamp(ms / 1000, tz=_dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-
-def _hl_row_dex_from_coin(raw_coin: str) -> str:
-    raw = str(raw_coin or "").strip()
-    if ":" in raw:
-        return raw.split(":", 1)[0].strip().lower()
-    return ""
 
 
 def _rows_to_targets(rows: List[Tuple[Any, ...]]) -> Dict[str, Dict[str, Dict[str, Dict[str, str]]]]:
@@ -115,9 +110,30 @@ def _rows_to_targets(rows: List[Tuple[Any, ...]]) -> Dict[str, Dict[str, Dict[st
         inst = str(inst_id or "")
         side_u = str(side or "").upper()
         acct = str(account_id or "")
-        if _is_spot_inst_id(inst):
+        strat = str(strategy or "").upper()
+
+        if strat == "SPOT_PERP":
+            if _is_spot_inst_id(inst) and side_u == "LONG":
+                targets.setdefault(acct, {}).setdefault("", {})[inst] = {
+                    "position_id": str(position_id),
+                    "leg_id": str(leg_id),
+                    "inst_id": inst,
+                    "side": side_u,
+                }
+            elif not _is_spot_inst_id(inst) and side_u == "SHORT":
+                dex, coin = split_hyperliquid_inst_id(inst)
+                coin = strip_coin_namespace(coin)
+                if not coin:
+                    continue
+                targets.setdefault(acct, {}).setdefault(dex, {})[coin] = {
+                    "position_id": str(position_id),
+                    "leg_id": str(leg_id),
+                    "inst_id": namespaced_inst_id(dex=dex, coin=coin),
+                    "side": side_u,
+                }
             continue
-        if str(strategy or "").upper() == "SPOT_PERP" and side_u != "SHORT":
+
+        if _is_spot_inst_id(inst):
             continue
         dex, coin = split_hyperliquid_inst_id(inst)
         coin = strip_coin_namespace(coin)
@@ -308,6 +324,7 @@ def run_backfill(
     end_ms: Optional[int] = None,
     verbose: bool = False,
     config_path: Optional[Path] = None,
+    spot_index_map: Optional[Dict[int, str]] = None,
 ) -> int:
     """Fetch HL userFunding + userFillsByTime and insert into pm_cashflows (deduped)."""
     targets_by_account, load_report = load_reset_targets_ex(con, config_path=config_path)
@@ -359,6 +376,8 @@ def run_backfill(
         if verbose:
             print(f"[hl_reset_backfill] empty window start={start} end={end}", file=sys.stderr)
         return 0
+
+    spot_map: Dict[int, str] = spot_index_map if spot_index_map is not None else fetch_spot_index_map()
 
     events: List[CashflowEvent] = []
     windows = _iter_time_windows(start, end)
@@ -491,11 +510,10 @@ def run_backfill(
                             if fee_f == 0:
                                 continue
                             raw_coin = str(r.get("coin") or r.get("asset") or "")
-                            coin = strip_coin_namespace(raw_coin)
                             if _hl_norm_dex(dex) != _hl_row_dex_from_coin(raw_coin):
                                 st["fee_skip_namespace"] += 1
                                 continue
-                            target = coin_targets.get(coin)
+                            target = hl_fee_target_from_fill_coin(raw_coin, coin_targets, spot_map)
                             if target is None:
                                 st["fee_skip_no_target"] += 1
                                 continue

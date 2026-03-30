@@ -39,6 +39,13 @@ from tracking.connectors.hyperliquid_private import (
     strip_coin_namespace,
 )
 from tracking.connectors.lighter_private import LighterPrivateConnector
+from tracking.pipeline.hl_cashflow_attribution import (
+    hl_norm_dex as _hl_norm_dex,
+    hl_resolve_fee_fill_target,
+    hl_row_dex_from_coin as _hl_row_dex_from_coin,
+)
+from tracking.pipeline.spot_meta import fetch_spot_index_map
+
 try:
     from tracking.connectors.okx_private import OKXPrivateConnector
 except Exception:  # OKX creds may be absent
@@ -274,27 +281,11 @@ def _is_spot_inst_id(inst_id: str) -> bool:
     return "/" in str(inst_id or "")
 
 
-def _hl_norm_dex(d: str) -> str:
-    return str(d or "").strip().lower()
-
-
-def _hl_row_dex_from_coin(raw_coin: str) -> str:
-    """Dex namespace encoded in HL coin strings, e.g. 'hyna:LINK' -> 'hyna', 'LINK' -> '' (native).
-
-    Must match pm_legs inst_id dex from split_hyperliquid_inst_id so we do not attach the same
-    userFunding row to both a builder perp leg and a native leg for the same underlying.
-    """
-    raw = str(raw_coin or "").strip()
-    if ":" in raw:
-        return raw.split(":", 1)[0].strip().lower()
-    return ""
-
-
 def _load_hyperliquid_targets(con: sqlite3.Connection) -> Dict[str, Dict[str, Dict[str, Dict[str, str]]]]:
-    """Return account_id -> dex -> coin -> target metadata for OPEN managed Hyperliquid perp legs.
+    """Return account_id -> dex -> lookup_key -> target metadata for OPEN Hyperliquid legs.
 
-    We only ingest realized funding for perp legs. For SPOT_PERP positions this means
-    the SHORT leg, because the LONG leg is the spot inventory.
+    Funding ingests only perp keys (SHORT for SPOT_PERP). Fee ingests also spot keys for SPOT_PERP
+    (LONG leg): lookup_key is the full spot ``inst_id`` (e.g. ``HYPE/USDC``) under native dex ``""``.
     """
 
     cur = con.execute(
@@ -310,9 +301,30 @@ def _load_hyperliquid_targets(con: sqlite3.Connection) -> Dict[str, Dict[str, Di
         inst = str(inst_id or "")
         side_u = str(side or "").upper()
         acct = str(account_id or "")
-        if _is_spot_inst_id(inst):
+        strat = str(strategy or "").upper()
+
+        if strat == "SPOT_PERP":
+            if _is_spot_inst_id(inst) and side_u == "LONG":
+                targets.setdefault(acct, {}).setdefault("", {})[inst] = {
+                    "position_id": str(position_id),
+                    "leg_id": str(leg_id),
+                    "inst_id": inst,
+                    "side": side_u,
+                }
+            elif not _is_spot_inst_id(inst) and side_u == "SHORT":
+                dex, coin = split_hyperliquid_inst_id(inst)
+                coin = strip_coin_namespace(coin)
+                if not coin:
+                    continue
+                targets.setdefault(acct, {}).setdefault(dex, {})[coin] = {
+                    "position_id": str(position_id),
+                    "leg_id": str(leg_id),
+                    "inst_id": namespaced_inst_id(dex=dex, coin=coin),
+                    "side": side_u,
+                }
             continue
-        if str(strategy or "").upper() == "SPOT_PERP" and side_u != "SHORT":
+
+        if _is_spot_inst_id(inst):
             continue
         dex, coin = split_hyperliquid_inst_id(inst)
         coin = strip_coin_namespace(coin)
@@ -327,14 +339,24 @@ def _load_hyperliquid_targets(con: sqlite3.Connection) -> Dict[str, Dict[str, Di
     return targets
 
 
-def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUID_DEFAULT_SINCE_HOURS) -> int:
-    """Ingest Hyperliquid realized funding + fees (OPEN managed perp legs only).
+def ingest_hyperliquid(
+    con: sqlite3.Connection,
+    *,
+    since_hours: int = HYPERLIQUID_DEFAULT_SINCE_HOURS,
+    spot_index_map: Optional[Dict[int, str]] = None,
+) -> int:
+    """Ingest Hyperliquid realized funding + fees for OPEN managed legs.
+
+    Funding attaches to perp legs only. Fees attach to perp legs and, for SPOT_PERP, to the spot leg
+    (resolved via ``spotMeta`` index map, same as fill ingester).
 
     See ``scripts/hl_reset_backfill.py`` for one-time backfill including CLOSED instruments.
     """
     targets_by_account = _load_hyperliquid_targets(con)
     if not targets_by_account:
         return 0
+
+    spot_map: Dict[int, str] = spot_index_map if spot_index_map is not None else fetch_spot_index_map()
 
     end_ms = now_ms()
     start_ms = end_ms - int(since_hours) * 3600 * 1000
@@ -437,10 +459,7 @@ def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUI
                                 continue
 
                             raw_coin = str(r.get("coin") or r.get("asset") or "")
-                            coin = strip_coin_namespace(raw_coin)
-                            if _hl_norm_dex(dex) != _hl_row_dex_from_coin(raw_coin):
-                                continue
-                            target = coin_targets.get(coin)
+                            target = hl_resolve_fee_fill_target(raw_coin, dex, coin_targets, spot_map)
                             if target is None:
                                 continue
 
@@ -456,7 +475,7 @@ def ingest_hyperliquid(con: sqlite3.Connection, *, since_hours: int = HYPERLIQUI
                                     position_id=target["position_id"],
                                     leg_id=target["leg_id"],
                                     raw_json=r,
-                                    meta={"coin": coin, "dex": dex or "", "inst_id": target["inst_id"]},
+                                    meta={"coin": raw_coin, "dex": dex or "", "inst_id": target["inst_id"]},
                                 )
                             )
                 except Exception:
@@ -624,6 +643,15 @@ def ingest_okx(con: sqlite3.Connection, *, since_hours: int = 24 * 7) -> int:
     return insert_cashflow_events(con, events)
 
 
+def _ingest_try(label: str, fn, *args, **kwargs) -> int:
+    """Run one venue ingest; on failure log to stderr and return 0 so other venues still run."""
+    try:
+        return int(fn(*args, **kwargs) or 0)
+    except Exception as e:
+        print(f"[pm_cashflows] WARN: {label} ingest failed ({type(e).__name__}): {e}", file=sys.stderr)
+        return 0
+
+
 def cmd_ingest(args) -> int:
     con = sqlite3.connect(str(args.db))
     con.execute("PRAGMA foreign_keys = ON")
@@ -633,15 +661,15 @@ def cmd_ingest(args) -> int:
         n = 0
         venues = [v.strip().lower() for v in args.venues.split(",") if v.strip()]
         if "paradex" in venues:
-            n += ingest_paradex(con)
+            n += _ingest_try("paradex", ingest_paradex, con)
         if "ethereal" in venues:
-            n += ingest_ethereal(con)
+            n += _ingest_try("ethereal", ingest_ethereal, con)
         if "hyperliquid" in venues:
-            n += ingest_hyperliquid(con, since_hours=int(args.since_hours))
+            n += _ingest_try("hyperliquid", ingest_hyperliquid, con, since_hours=int(args.since_hours))
         if "lighter" in venues:
-            n += ingest_lighter(con)
+            n += _ingest_try("lighter", ingest_lighter, con)
         if "okx" in venues:
-            n += ingest_okx(con, since_hours=int(args.since_hours))
+            n += _ingest_try("okx", ingest_okx, con, since_hours=int(args.since_hours))
         print(f"OK: inserted {n} cashflow events")
         return 0
     finally:
@@ -766,7 +794,13 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sp_i = sub.add_parser("ingest")
-    sp_i.add_argument("--venues", type=str, default="paradex,ethereal")
+    sp_i.add_argument(
+        "--venues",
+        type=str,
+        default="paradex,ethereal,hyperliquid",
+        help="Comma-separated: paradex, ethereal, hyperliquid, lighter, okx. "
+        "Failures in one venue are logged and skipped so others still run.",
+    )
     sp_i.add_argument("--since-hours", type=int, default=HYPERLIQUID_DEFAULT_SINCE_HOURS)
 
     sp_r = sub.add_parser("report")

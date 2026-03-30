@@ -156,11 +156,13 @@ The **Funding Summary** panel (`frontend/components/FundingSummary.tsx`) is driv
 
 **Ledger source (`pm_cashflows`)**
 
-- Rows are written by **`scripts/pm_cashflows.py`** (`ingest` command), scheduled hourly. For **Hyperliquid** managed perp legs, the script calls the HL **`/info`** POST API in time windows:
-  - **`userFunding`** → events with `cf_type = 'FUNDING'` (USDC amount from the payload; signed as returned by the API).
-  - **`userFillsByTime`** → each non-zero **`fee`** → `cf_type = 'FEE'` (stored negative).
+- Rows are written by **`scripts/pm_cashflows.py`** (`ingest` command), scheduled hourly. For **Hyperliquid**, the script calls the HL **`/info`** POST API in time windows (per dex, including native `""` when spot legs exist):
+  - **`userFunding`** → events with `cf_type = 'FUNDING'` on **perp legs only** (USDC amount from the payload; signed as returned by the API). SPOT_PERP spot legs do not receive funding rows.
+  - **`userFillsByTime`** → each non-zero **`fee`** → `cf_type = 'FEE'` (stored negative). Perp fills attach to the SHORT perp leg; spot fills (including `@{index}` coins) resolve via **`spotMeta`** the same way as `fill_ingester` and attach to the LONG spot leg (`inst_id` like `HYPE/USDC`).
 
-See `ingest_hyperliquid` in `scripts/pm_cashflows.py` for dex-scoped requests and leg/position mapping.
+See `ingest_hyperliquid` in `scripts/pm_cashflows.py` and `tracking/pipeline/hl_cashflow_attribution.py` for dex/coin guards and fee resolution.
+
+**Note:** `pm_fills` also stores per-fill **`fee`** for display and analytics; that is separate from the **`pm_cashflows`** FEE ledger (no duplicate rows in `pm_cashflows` for the same fill—dedupe is by venue/account/ts/type/amount/description; spot vs perp legs use different `leg_id`s).
 
 **Hourly snapshot overlap**
 

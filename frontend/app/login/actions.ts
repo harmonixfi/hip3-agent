@@ -12,10 +12,7 @@ function makeSessionToken(password: string): string {
   return createHmac("sha256", password).update(password).digest("hex");
 }
 
-export async function login(
-  _prevState: LoginState,
-  formData: FormData,
-): Promise<LoginState> {
+export async function login(formData: FormData): Promise<LoginState> {
   const submitted = (formData.get("password") ?? "") as string;
   const expected = process.env.DASHBOARD_PASSWORD;
 

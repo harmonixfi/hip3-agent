@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-950 text-gray-100 antialiased;
+  }
+}
+
+@layer components {
+  .pnl-positive {
+    @apply text-green-400;
+  }
+  .pnl-negative {
+    @apply text-red-400;
+  }
+  .pnl-zero {
+    @apply text-gray-400;
+  }
+  .card {
+    @apply bg-gray-900 border border-gray-800 rounded-lg p-4;
+  }
+  .data-table {
+    @apply w-full text-sm;
+  }
+  .data-table th {
+    @apply text-left text-gray-400 font-medium py-2 px-3 border-b border-gray-800;
+  }
+  .data-table td {
+    @apply py-2 px-3 border-b border-gray-800/50 tabular-nums;
+  }
+}

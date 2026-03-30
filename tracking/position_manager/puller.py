@@ -28,6 +28,26 @@ from .accounts import resolve_venue_accounts
 from .db_sync import ensure_multi_wallet_columns
 
 
+ROOT = Path(__file__).parent.parent
+
+# Equity config (builder dexes + spot exclusions)
+_EQUITY_CONFIG: dict = {}
+_EQUITY_CONFIG_PATH = ROOT.parent / "config" / "equity_config.json"
+
+
+def _load_equity_config() -> dict:
+    """Load equity_config.json once and cache."""
+    global _EQUITY_CONFIG
+    if _EQUITY_CONFIG:
+        return _EQUITY_CONFIG
+    try:
+        with open(_EQUITY_CONFIG_PATH) as f:
+            _EQUITY_CONFIG = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        _EQUITY_CONFIG = {}
+    return _EQUITY_CONFIG
+
+
 # Venue -> connector class mapping
 CONNECTORS = {
     "paradex": ParadexPrivateConnector,
@@ -173,7 +193,20 @@ def pull_venue_positions(venue: str, **connector_kwargs) -> Dict:
         }
 
     try:
-        account_snapshot = connector.fetch_account_snapshot()
+        # For Hyperliquid, pass equity config for comprehensive equity computation
+        snapshot_kwargs: dict = {}
+        if venue == "hyperliquid":
+            eq_cfg = _load_equity_config()
+            builder_dexes = eq_cfg.get("builder_dexes", [])
+            exclude_map = eq_cfg.get("exclude_spot_tokens", {})
+            address = getattr(connector, "address", "")
+            exclude_tokens = exclude_map.get(address, [])
+            if builder_dexes:
+                snapshot_kwargs["builder_dexes"] = builder_dexes
+            if exclude_tokens:
+                snapshot_kwargs["exclude_spot_tokens"] = exclude_tokens
+
+        account_snapshot = connector.fetch_account_snapshot(**snapshot_kwargs)
         positions = connector.fetch_open_positions()
 
         return {

@@ -1,0 +1,5 @@
+# age identity file (private key — NEVER commit)
+age-identity.txt
+
+# Decrypted secrets (temporary)
+*.dec.json

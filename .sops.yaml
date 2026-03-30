@@ -1,0 +1,15 @@
+# sops configuration for age encryption
+# To set up:
+#   1. age-keygen -o vault/age-identity.txt
+#   2. Copy the public key from the output
+#   3. Replace AGE_PUBLIC_KEY_HERE below
+#   4. Create vault/secrets.enc.json with your secrets
+#   5. sops --encrypt --in-place vault/secrets.enc.json
+#
+# To decrypt: sops --decrypt vault/secrets.enc.json
+# Requires: SOPS_AGE_KEY_FILE=vault/age-identity.txt (or set in env)
+
+creation_rules:
+  - path_regex: vault/.*\.enc\.json$
+    age: >-
+      AGE_PUBLIC_KEY_HERE

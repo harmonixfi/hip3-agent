@@ -35,7 +35,15 @@ export default function SpreadDisplay({ subPairs, legs }: Props) {
           </thead>
           <tbody>
             {subPairs.map((sp, i) => {
-              const favorable = sp.spread_pnl_bps > 0;
+              const pnl = sp.spread_pnl_bps;
+              const direction =
+                pnl == null
+                  ? { label: "\u2014", className: "text-gray-500" }
+                  : pnl > 0
+                    ? { label: "Favorable", className: "text-green-400" }
+                    : pnl < 0
+                      ? { label: "Unfavorable", className: "text-red-400" }
+                      : { label: "Flat", className: "text-gray-400" };
               return (
                 <tr key={i}>
                   <td className="text-gray-400 text-xs">
@@ -54,12 +62,8 @@ export default function SpreadDisplay({ subPairs, legs }: Props) {
                     {formatBps(sp.spread_pnl_bps)}
                   </td>
                   <td className="text-right">
-                    <span
-                      className={`text-xs ${
-                        favorable ? "text-green-400" : "text-red-400"
-                      }`}
-                    >
-                      {favorable ? "Favorable" : "Unfavorable"}
+                    <span className={`text-xs ${direction.className}`}>
+                      {direction.label}
                     </span>
                   </td>
                 </tr>

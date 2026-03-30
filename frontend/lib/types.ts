@@ -31,9 +31,9 @@ export interface PortfolioOverview {
 export interface SubPair {
   long_leg_id: string;
   short_leg_id: string;
-  entry_spread_bps: number;
-  exit_spread_bps: number;
-  spread_pnl_bps: number;
+  entry_spread_bps: number | null;
+  exit_spread_bps: number | null;
+  spread_pnl_bps: number | null;
 }
 
 export interface Leg {
@@ -125,15 +125,15 @@ export interface ClosedPosition {
   position_id: string;
   base: string;
   status: "CLOSED";
-  opened_at: string;
-  closed_at: string;
-  duration_days: number;
-  amount_usd: number;
-  realized_spread_pnl: number;
-  total_funding_earned: number;
-  total_fees_paid: number;
-  net_pnl: number;
-  net_apr: number;
+  opened_at: string | null;
+  closed_at: string | null;
+  duration_days: number | null;
+  amount_usd: number | null;
+  realized_spread_pnl: number | null;
+  total_funding_earned: number | null;
+  total_fees_paid: number | null;
+  net_pnl: number | null;
+  net_apr: number | null;
   entry_spread_bps: number | null;
   exit_spread_bps: number | null;
 }
@@ -169,4 +169,5 @@ export interface ManualCashflowRequest {
 
 export interface ManualCashflowResponse {
   cashflow_id: number;
+  message: string;
 }

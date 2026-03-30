@@ -6,7 +6,7 @@ services:
     container_name: harmonix-api
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8000:8000"  # Only localhost — Cloudflare Tunnel connects here
+      - "127.0.0.1:8001:8000"  # Only localhost — Cloudflare Tunnel connects here
     volumes:
       - ./tracking/db:/app/tracking/db        # SQLite DB (persistent)
       - ./.arbit_env:/app/.arbit_env:ro        # Env vars (read-only)

@@ -11,6 +11,8 @@ import type {
 
 const API_BASE_URL = process.env.API_BASE_URL;
 const API_KEY = process.env.API_KEY;
+const CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID;
+const CF_ACCESS_CLIENT_SECRET = process.env.CF_ACCESS_CLIENT_SECRET;
 
 class ApiError extends Error {
   constructor(
@@ -34,6 +36,11 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
   if (API_KEY) {
     headers["X-API-Key"] = API_KEY;
+  }
+
+  if (CF_ACCESS_CLIENT_ID && CF_ACCESS_CLIENT_SECRET) {
+    headers["CF-Access-Client-Id"] = CF_ACCESS_CLIENT_ID;
+    headers["CF-Access-Client-Secret"] = CF_ACCESS_CLIENT_SECRET;
   }
 
   const res = await fetch(url, {

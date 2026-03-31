@@ -61,6 +61,19 @@ class SubPairSpread(BaseModel):
     spread_pnl_bps: Optional[float] = None
 
 
+class WindowedMetrics(BaseModel):
+    funding_1d:          Optional[float] = None
+    funding_3d:          Optional[float] = None
+    funding_7d:          Optional[float] = None
+    funding_14d:         Optional[float] = None
+    apr_1d:              Optional[float] = None  # percent form e.g. 38.5 means 38.5%
+    apr_3d:              Optional[float] = None
+    apr_7d:              Optional[float] = None
+    apr_14d:             Optional[float] = None
+    incomplete_notional: bool = False
+    missing_leg_ids:     list[str] = []
+
+
 class PositionSummary(BaseModel):
     position_id: str
     base: str
@@ -82,6 +95,7 @@ class PositionSummary(BaseModel):
     sub_pairs: list[SubPairSpread] = []
     legs: list[LegDetail] = []
     opened_at: Optional[str] = None  # ISO 8601
+    windowed: Optional[WindowedMetrics] = None  # None if amount_usd unavailable
 
 
 class FillsSummaryItem(BaseModel):

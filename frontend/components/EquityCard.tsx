@@ -15,14 +15,16 @@ export default function EquityCard({ data }: Props) {
         {formatUSD(data.total_equity_usd)}
       </div>
       <div className="flex items-center gap-3 mt-2">
-        <span className={`text-sm font-medium ${pnlColor(data.daily_change_usd)}`}>
-          {formatUSD(data.daily_change_usd)} ({formatPct(data.daily_change_pct)})
+        <span className={`text-sm font-medium ${data.daily_change_usd != null ? pnlColor(data.daily_change_usd) : "text-gray-500"}`}>
+          {data.daily_change_usd != null
+            ? `${formatUSD(data.daily_change_usd)} (${formatPct(data.daily_change_pct ?? 0)})`
+            : "$0.00 (0.00%)"}
         </span>
         <span className="text-xs text-gray-500">24h</span>
       </div>
       <div className="flex items-center gap-3 mt-1">
-        <span className={`text-sm ${pnlColor(data.cashflow_adjusted_apr)}`}>
-          {formatPct(data.cashflow_adjusted_apr, 1)} APR
+        <span className={`text-sm ${data.cashflow_adjusted_apr != null ? pnlColor(data.cashflow_adjusted_apr) : "text-gray-500"}`}>
+          {data.cashflow_adjusted_apr != null ? `${formatPct(data.cashflow_adjusted_apr, 1)} APR` : "- APR"}
         </span>
         <span className="text-xs text-gray-500">cashflow-adjusted</span>
       </div>

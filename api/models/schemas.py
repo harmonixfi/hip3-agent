@@ -24,9 +24,9 @@ class AccountEquity(BaseModel):
 class PortfolioOverview(BaseModel):
     total_equity_usd: float
     equity_by_account: dict[str, AccountEquity]
-    daily_change_usd: float
-    daily_change_pct: float
-    cashflow_adjusted_apr: float
+    daily_change_usd: Optional[float]
+    daily_change_pct: Optional[float]
+    cashflow_adjusted_apr: Optional[float]
     funding_today_usd: float
     funding_alltime_usd: float
     fees_alltime_usd: float

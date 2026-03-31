@@ -11,9 +11,9 @@ export interface AccountEquity {
 export interface PortfolioOverview {
   total_equity_usd: number;
   equity_by_account: Record<string, AccountEquity>;
-  daily_change_usd: number;
-  daily_change_pct: number;
-  cashflow_adjusted_apr: number;
+  daily_change_usd: number | null;
+  daily_change_pct: number | null;
+  cashflow_adjusted_apr: number | null;
   funding_today_usd: number;
   funding_alltime_usd: number;
   fees_alltime_usd: number;

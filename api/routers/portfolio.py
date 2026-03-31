@@ -138,10 +138,28 @@ def portfolio_overview(
         )
         total_equity += eq
 
+    # Gate 24h metrics on having at least 25h of snapshot history.
+    # Early snapshots (right after deployment) have incomplete data, so the
+    # "24h prior equity" would be unreliably low, producing huge fake changes.
+    import time as _time
+    now_ms = int(_time.time() * 1000)
+    first_snap_ts = db.execute("SELECT MIN(ts) FROM pm_portfolio_snapshots").fetchone()[0]
+    has_sufficient_history = (
+        first_snap_ts is not None and (now_ms - first_snap_ts) >= 25 * 3600 * 1000
+    )
+
     # Use snapshot values if available, else compute from components
-    # Snapshot REAL columns may be NULL — treat as 0.0 for math / Pydantic
-    daily_change = float(snap["daily_change_usd"] or 0.0) if snap else 0.0
-    apr = float(snap["apr_daily"] or 0.0) if snap else 0.0
+    # Snapshot REAL columns may be NULL — treat as None when insufficient history
+    daily_change: Optional[float] = (
+        float(snap["daily_change_usd"])
+        if snap and snap["daily_change_usd"] is not None and has_sufficient_history
+        else None
+    )
+    apr: Optional[float] = (
+        float(snap["apr_daily"])
+        if snap and snap["apr_daily"] is not None and has_sufficient_history
+        else None
+    )
     total_upnl = float(snap["total_unrealized_pnl"] or 0.0) if snap else 0.0
     snap_ts = snap["ts"] if snap else None
 
@@ -161,18 +179,18 @@ def portfolio_overview(
                 pass
 
     net_pnl = funding_alltime + fees_alltime
-    daily_change_pct = (
+    daily_change_pct: Optional[float] = (
         (daily_change / (total_equity - daily_change) * 100)
-        if total_equity and total_equity != daily_change
-        else 0.0
+        if daily_change is not None and total_equity and total_equity != daily_change
+        else None
     )
 
     return PortfolioOverview(
         total_equity_usd=round(total_equity, 2),
         equity_by_account=equity_by_account,
-        daily_change_usd=round(daily_change, 2),
-        daily_change_pct=round(daily_change_pct, 2),
-        cashflow_adjusted_apr=round(apr, 2) if apr else 0.0,
+        daily_change_usd=round(daily_change, 2) if daily_change is not None else None,
+        daily_change_pct=round(daily_change_pct, 2) if daily_change_pct is not None else None,
+        cashflow_adjusted_apr=round(apr, 2) if apr is not None else None,
         funding_today_usd=round(funding_today, 2),
         funding_alltime_usd=round(funding_alltime, 2),
         fees_alltime_usd=round(fees_alltime, 2),

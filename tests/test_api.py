@@ -224,6 +224,45 @@ def _setup_test_db() -> Path:
          now_ms - 3600000, "FUNDING", 10.0, "USDC"),
     )
 
+    # Young position (2 days old) — for age-gating windowed metrics test
+    two_days_ago_ms = now_ms - 2 * 86400 * 1000
+    con.execute(
+        """
+        INSERT INTO pm_positions (position_id, venue, strategy, status, created_at_ms, updated_at_ms, meta_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("pos_test_YOUNG", "hyperliquid", "SPOT_PERP", "OPEN",
+         two_days_ago_ms, now_ms,
+         json.dumps({"base": "SOL", "strategy_type": "SPOT_PERP", "amount_usd": 5000.0})),
+    )
+    con.execute(
+        """
+        INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size,
+                             entry_price, current_price, unrealized_pnl, status, opened_at_ms, account_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("pos_test_YOUNG_SPOT", "pos_test_YOUNG", "hyperliquid", "SOL/USDC",
+         "LONG", 10.0, 150.0, 152.0, 20.0, "OPEN", two_days_ago_ms, "0xtest123"),
+    )
+    con.execute(
+        """
+        INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size,
+                             entry_price, current_price, unrealized_pnl, status, opened_at_ms, account_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("pos_test_YOUNG_PERP", "pos_test_YOUNG", "hyperliquid", "SOL",
+         "SHORT", 10.0, 150.5, 152.0, -15.0, "OPEN", two_days_ago_ms, "0xtest123"),
+    )
+    # Funding cashflow: 6 hours ago (within 1d window)
+    con.execute(
+        """
+        INSERT INTO pm_cashflows (position_id, leg_id, venue, account_id, ts, cf_type, amount, currency)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("pos_test_YOUNG", "pos_test_YOUNG_PERP", "hyperliquid", "0xtest123",
+         now_ms - 6 * 3600000, "FUNDING", 8.0, "USDC"),
+    )
+
     # Insert account snapshot
     con.execute(
         """
@@ -659,14 +698,16 @@ def test_positions_windowed_metrics_present(client: TestClient):
 
 
 def test_positions_windowed_funding_windows(client: TestClient):
-    """Windowed funding sums respect time boundaries.
+    """Windowed funding sums respect time boundaries and age-gating.
 
-    Cashflows for pos_test_BTC:
-      - 5.25 at now - 1h   (in 1d, 3d, 7d, 14d)
-      - 5.00 at now - 3h   (in 1d, 3d, 7d, 14d)
-      - 25.0 at now - 5d   (in 7d, 14d only -- NOT 1d or 3d)
+    pos_test_BTC is ~1 day old (created_at_ms = now - 1d).
+    Cashflows:
+      - 5.25 at now - 1h   (in 1d window)
+      - 5.00 at now - 3h   (in 1d window)
+      - 25.0 at now - 5d   (before position creation — ignored by age-gate)
 
-    amount_usd_raw = 0.1 * 60500 (spot current_price) + 0.1 * 60500 (perp current_price) = 12100.0
+    Because position is ~1 day old, only 1d window is valid; 3d/7d/14d are age-gated to None.
+    amount_usd_raw = 0.1 * 60500 + 0.1 * 60500 = 12100.0
     """
     resp = client.get("/api/positions?status=OPEN", headers=_headers())
     assert resp.status_code == 200
@@ -676,19 +717,22 @@ def test_positions_windowed_funding_windows(client: TestClient):
     assert w["incomplete_notional"] is False
     assert w["missing_leg_ids"] == []
 
-    # Funding windows
+    # 1d window: valid (position is ~1 day old)
     assert w["funding_1d"]  == pytest.approx(10.25, abs=0.01)   # 5.25 + 5.00
-    assert w["funding_3d"]  == pytest.approx(10.25, abs=0.01)   # 5.25 + 5.00
-    assert w["funding_7d"]  == pytest.approx(35.25, abs=0.01)   # 5.25 + 5.00 + 25.0
-    assert w["funding_14d"] == pytest.approx(35.25, abs=0.01)   # same
+
+    # 3d/7d/14d: age-gated to None (position only ~1 day old)
+    assert w["funding_3d"]  is None
+    assert w["funding_7d"]  is None
+    assert w["funding_14d"] is None
 
     # APR for 1d: (10.25 / 1) * 365 / 12100 * 100
     expected_apr_1d = (10.25 / 1) * 365 / 12100 * 100
     assert w["apr_1d"] == pytest.approx(expected_apr_1d, rel=0.001)
 
-    # APR for 7d: (35.25 / 7) * 365 / 12100 * 100
-    expected_apr_7d = (35.25 / 7) * 365 / 12100 * 100
-    assert w["apr_7d"] == pytest.approx(expected_apr_7d, rel=0.001)
+    # APR for 3d/7d/14d: age-gated
+    assert w["apr_3d"]  is None
+    assert w["apr_7d"]  is None
+    assert w["apr_14d"] is None
 
 
 def test_positions_windowed_incomplete_notional(client: TestClient):
@@ -709,6 +753,28 @@ def test_positions_windowed_incomplete_notional(client: TestClient):
 
     # Funding $ fields still populated (cashflows are trustworthy)
     assert w["funding_1d"] == pytest.approx(10.0, abs=0.01)
+
+
+def test_positions_windowed_age_gating(client: TestClient):
+    """Windows wider than position age are nulled out (2-day-old position has no 3d/7d/14d)."""
+    resp = client.get("/api/positions?status=OPEN", headers=_headers())
+    assert resp.status_code == 200
+    young = next(p for p in resp.json() if p["position_id"] == "pos_test_YOUNG")
+    w = young["windowed"]
+
+    assert w is not None
+
+    # 1d window: position is 2 days old, so 1d is valid
+    assert w["funding_1d"] == pytest.approx(8.0, abs=0.01)
+    assert w["apr_1d"] is not None
+
+    # 3d/7d/14d: position is only ~2 days old, these must be None
+    assert w["funding_3d"] is None
+    assert w["apr_3d"]     is None
+    assert w["funding_7d"] is None
+    assert w["apr_7d"]     is None
+    assert w["funding_14d"] is None
+    assert w["apr_14d"]     is None
 
 
 # ===================================================================

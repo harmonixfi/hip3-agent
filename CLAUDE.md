@@ -15,11 +15,12 @@ Mục đích của agent là trade delta neutral - funding arbitrage strategy.
 - For complex problems, throw more compute at it via subagents
 - One task per subagent for focused execution
 
-### 3. Self-Improvement Loop
-- After ANY correction from the user: update `tasks/lessons.md` with the pattern
-- Write rules for yourself that prevent the same mistake
-- Ruthlessly iterate on these lessons until mistake rate drops
-- Review lessons at session start for relevant project
+### 3. Learning System
+- **Session start**: READ `docs/tasks/lessons.md` BEFORE writing any code. Scan categories relevant to the current task.
+- **Trigger**: Log a lesson when a bug takes >5 min to debug, when user corrects you, or when you catch yourself repeating a known bad pattern.
+- **Pre-commit check**: Before committing, ask "does this code violate any lesson in docs/tasks/lessons.md?"
+- **Format**: Follow the template in the file — each entry needs an ID, category tag, Wrong/Right pattern, and specific context.
+- **Pruning**: When file exceeds 40 entries → merge entries with the same root cause, archive entries not violated in 5+ consecutive sessions to `docs/tasks/lessons_archive.md`. Keep ≤30 active entries.
 
 ### 4. Verification Before Done
 - Never mark a task complete without proving it works

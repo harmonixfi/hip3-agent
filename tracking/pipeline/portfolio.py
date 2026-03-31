@@ -14,13 +14,14 @@ Writes hourly snapshot to pm_portfolio_snapshots.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 
-DEFAULT_TRACKING_START = "2026-01-15"
+DEFAULT_TRACKING_START = os.environ.get("TRACKING_START_DATE", "2026-03-27")
 
 
 def _now_ms() -> int:
@@ -91,11 +92,15 @@ def _get_net_deposits(con, *, since_ms):
     return float(row[0])
 
 
-def _get_prior_equity(con, *, hours_ago=24):
-    target_ms = _now_ms() - hours_ago * 3600 * 1000
+def _get_prior_equity(con, *, hours_ago=24, tolerance_hours=4):
+    """Get equity from ~hours_ago.  Returns None if no snapshot within tolerance."""
+    now = _now_ms()
+    target_ms = now - hours_ago * 3600 * 1000
+    min_allowed_ms = target_ms - tolerance_hours * 3600 * 1000
     row = con.execute(
-        "SELECT total_equity_usd FROM pm_portfolio_snapshots WHERE ts <= ? ORDER BY ts DESC LIMIT 1",
-        (target_ms,),
+        "SELECT total_equity_usd FROM pm_portfolio_snapshots "
+        "WHERE ts <= ? AND ts >= ? ORDER BY ts DESC LIMIT 1",
+        (target_ms, min_allowed_ms),
     ).fetchone()
     if row is None or row[0] is None: return None
     return float(row[0])
@@ -132,6 +137,13 @@ def compute_portfolio_snapshot(con, *, tracking_start_date=DEFAULT_TRACKING_STAR
         net_deposits_24h = _get_net_deposits(con, since_ms=now - 24 * 3600 * 1000)
         cashflow_adjusted_change = daily_change - net_deposits_24h
         apr_daily = (cashflow_adjusted_change / prior_equity) * 365.0
+
+        # Circuit-breaker: if equity moved >50% with no recorded deposits,
+        # the change is likely an unrecorded deposit/withdrawal — suppress.
+        if abs(daily_change) / prior_equity > 0.50 and net_deposits_24h == 0:
+            daily_change = None
+            cashflow_adjusted_change = None
+            apr_daily = None
 
     snapshot = {
         "ts": now, "total_equity_usd": total_equity,

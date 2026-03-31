@@ -67,6 +67,7 @@ def _windowed_metrics(
     amount_usd_raw: Optional[float],
     leg_rows: list[sqlite3.Row],
     now_ms: int,
+    created_at_ms: Optional[int] = None,
 ) -> Optional[WindowedMetrics]:
     """Compute realized windowed funding and APR from pm_cashflows.
 
@@ -128,15 +129,30 @@ def _windowed_metrics(
             return None
         return round((funding / days) * 365 / amount_usd_raw * 100, 4)
 
+    apr_1d  = _apr(funding_1d, 1)
+    apr_3d  = _apr(funding_3d, 3)
+    apr_7d  = _apr(funding_7d, 7)
+    apr_14d = _apr(funding_14d, 14)
+
+    # Step 4: null out windows wider than position age
+    if created_at_ms is not None:
+        days_open = (now_ms - created_at_ms) / (86400 * 1000)
+        if days_open < 3:
+            funding_3d = None; apr_3d = None
+        if days_open < 7:
+            funding_7d = None; apr_7d = None
+        if days_open < 14:
+            funding_14d = None; apr_14d = None
+
     return WindowedMetrics(
         funding_1d=funding_1d,
         funding_3d=funding_3d,
         funding_7d=funding_7d,
         funding_14d=funding_14d,
-        apr_1d=_apr(funding_1d, 1),
-        apr_3d=_apr(funding_3d, 3),
-        apr_7d=_apr(funding_7d, 7),
-        apr_14d=_apr(funding_14d, 14),
+        apr_1d=apr_1d,
+        apr_3d=apr_3d,
+        apr_7d=apr_7d,
+        apr_14d=apr_14d,
         incomplete_notional=incomplete_notional,
         missing_leg_ids=missing_leg_ids,
     )
@@ -244,7 +260,10 @@ def _build_position_summary(
 
     # Windowed realized metrics
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-    windowed = _windowed_metrics(db, position_id, amount_usd, leg_rows, now_ms)
+    windowed = _windowed_metrics(
+        db, position_id, amount_usd, leg_rows, now_ms,
+        created_at_ms=pos["created_at_ms"],
+    )
 
     return PositionSummary(
         position_id=position_id,

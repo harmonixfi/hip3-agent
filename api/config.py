@@ -26,6 +26,7 @@ class Settings(BaseModel):
     ]
     # Additional Vercel domains added via HARMONIX_CORS_ORIGINS env var
     # Format: comma-separated URLs
+    tracking_start_date: str = "2026-03-27"
 
 
 @lru_cache
@@ -55,8 +56,14 @@ def get_settings() -> Settings:
     # Resolve DB path override
     db_path = Path(os.environ.get("HARMONIX_DB_PATH", str(Settings().db_path)))
 
+    # Resolve tracking start date
+    tracking_start_date = os.environ.get(
+        "TRACKING_START_DATE", Settings().tracking_start_date
+    )
+
     return Settings(
         db_path=db_path,
         api_key=api_key,
         cors_origins=cors_origins,
+        tracking_start_date=tracking_start_date,
     )

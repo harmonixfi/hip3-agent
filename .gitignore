@@ -63,3 +63,7 @@ memory/
 .idea/
 *.swp
 *.swo
+
+
+# Bean draft
+prompt.md

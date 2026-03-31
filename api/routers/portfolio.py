@@ -138,26 +138,27 @@ def portfolio_overview(
         )
         total_equity += eq
 
-    # Gate 24h metrics on having at least 25h of snapshot history.
-    # Early snapshots (right after deployment) have incomplete data, so the
-    # "24h prior equity" would be unreliably low, producing huge fake changes.
+    # Gate 24h metrics: verify an actual snapshot exists in the 20-28h-ago window.
+    # Without a valid prior snapshot, daily_change is meaningless.
     import time as _time
     now_ms = int(_time.time() * 1000)
-    first_snap_ts = db.execute("SELECT MIN(ts) FROM pm_portfolio_snapshots").fetchone()[0]
-    has_sufficient_history = (
-        first_snap_ts is not None and (now_ms - first_snap_ts) >= 25 * 3600 * 1000
-    )
+    target_ms = now_ms - 24 * 3600 * 1000
+    min_ms = target_ms - 4 * 3600 * 1000  # 28h ago (4h tolerance)
+    has_valid_prior = db.execute(
+        "SELECT 1 FROM pm_portfolio_snapshots WHERE ts <= ? AND ts >= ? LIMIT 1",
+        (target_ms, min_ms),
+    ).fetchone() is not None
 
     # Use snapshot values if available, else compute from components
     # Snapshot REAL columns may be NULL — treat as None when insufficient history
     daily_change: Optional[float] = (
         float(snap["daily_change_usd"])
-        if snap and snap["daily_change_usd"] is not None and has_sufficient_history
+        if snap and snap["daily_change_usd"] is not None and has_valid_prior
         else None
     )
     apr: Optional[float] = (
         float(snap["apr_daily"])
-        if snap and snap["apr_daily"] is not None and has_sufficient_history
+        if snap and snap["apr_daily"] is not None and has_valid_prior
         else None
     )
     total_upnl = float(snap["total_unrealized_pnl"] or 0.0) if snap else 0.0

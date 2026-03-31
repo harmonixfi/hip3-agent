@@ -27,6 +27,7 @@ from api.models.schemas import (
     PositionDetail,
     PositionSummary,
     SubPairSpread,
+    WindowedMetrics,
 )
 
 router = APIRouter(prefix="/api/positions", tags=["positions"])
@@ -58,6 +59,87 @@ def _gross_notional_usd_from_leg_rows(leg_rows: list[sqlite3.Row]) -> Optional[f
         total += abs(float(px) * float(sz))
         found_any = True
     return total if found_any else None
+
+
+def _windowed_metrics(
+    db: sqlite3.Connection,
+    position_id: str,
+    amount_usd_raw: Optional[float],
+    leg_rows: list[sqlite3.Row],
+    now_ms: int,
+) -> Optional[WindowedMetrics]:
+    """Compute realized windowed funding and APR from pm_cashflows.
+
+    Returns None if amount_usd_raw is unavailable.
+    APR values are in percent form (e.g. 38.5 means 38.5%).
+    All apr_* are None when incomplete_notional=True (unreliable denominator).
+    funding_* are None when the window sum is 0.0 (no cashflows in that period).
+    """
+    # Step 1: detect incomplete notional (mirror _gross_notional_usd_from_leg_rows logic)
+    missing_leg_ids: list[str] = []
+    for lr in leg_rows:
+        px = lr["current_price"]
+        if px is None:
+            px = lr["avg_entry_price"]
+        if px is None:
+            px = lr["entry_price"]
+        sz = lr["size"]
+        if px is None or sz is None:
+            missing_leg_ids.append(lr["leg_id"])
+
+    incomplete_notional = len(missing_leg_ids) > 0
+
+    if amount_usd_raw is None or amount_usd_raw <= 0:
+        return None
+
+    # Step 2: single batched funding query (positional ? placeholders)
+    ms_1d  = now_ms - 1  * 86400 * 1000
+    ms_3d  = now_ms - 3  * 86400 * 1000
+    ms_7d  = now_ms - 7  * 86400 * 1000
+    ms_14d = now_ms - 14 * 86400 * 1000
+
+    row = db.execute(
+        """
+        SELECT
+          SUM(CASE WHEN ts >= ? THEN amount ELSE 0 END) AS funding_1d,
+          SUM(CASE WHEN ts >= ? THEN amount ELSE 0 END) AS funding_3d,
+          SUM(CASE WHEN ts >= ? THEN amount ELSE 0 END) AS funding_7d,
+          SUM(CASE WHEN ts >= ? THEN amount ELSE 0 END) AS funding_14d
+        FROM pm_cashflows
+        WHERE position_id = ? AND cf_type = 'FUNDING'
+        """,
+        (ms_1d, ms_3d, ms_7d, ms_14d, position_id),
+    ).fetchone()
+
+    def _to_funding(v: Optional[float]) -> Optional[float]:
+        """0.0 treated as None — no cashflows in this window."""
+        if v is None or v == 0.0:
+            return None
+        return round(v, 4)
+
+    funding_1d  = _to_funding(row["funding_1d"]  if row else None)
+    funding_3d  = _to_funding(row["funding_3d"]  if row else None)
+    funding_7d  = _to_funding(row["funding_7d"]  if row else None)
+    funding_14d = _to_funding(row["funding_14d"] if row else None)
+
+    # Step 3: derive APR (percent form). All None if incomplete_notional.
+    def _apr(funding: Optional[float], days: int) -> Optional[float]:
+        if incomplete_notional or funding is None:
+            return None
+        return round((funding / days) * 365 / amount_usd_raw * 100, 4)
+
+    return WindowedMetrics(
+        funding_1d=funding_1d,
+        funding_3d=funding_3d,
+        funding_7d=funding_7d,
+        funding_14d=funding_14d,
+        apr_1d=_apr(funding_1d, 1),
+        apr_3d=_apr(funding_3d, 3),
+        apr_7d=_apr(funding_7d, 7),
+        apr_14d=_apr(funding_14d, 14),
+        incomplete_notional=incomplete_notional,
+        missing_leg_ids=missing_leg_ids,
+    )
 
 
 def _build_position_summary(
@@ -160,6 +242,10 @@ def _build_position_summary(
         if days_open > 0:
             carry_apr = round((net_carry / amount_usd) / days_open * 365 * 100, 2)
 
+    # Windowed realized metrics
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    windowed = _windowed_metrics(db, position_id, amount_usd, leg_rows, now_ms)
+
     return PositionSummary(
         position_id=position_id,
         base=base,
@@ -175,6 +261,7 @@ def _build_position_summary(
         sub_pairs=sub_pairs,
         legs=legs,
         opened_at=_ts_to_iso(pos["created_at_ms"]),
+        windowed=windowed,
     )
 
 

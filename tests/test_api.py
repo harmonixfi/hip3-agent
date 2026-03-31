@@ -18,6 +18,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
 # Ensure repo root is on sys.path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -163,6 +165,63 @@ def _setup_test_db() -> Path:
         """,
         ("pos_test_BTC", "pos_test_BTC_SPOT", "hyperliquid", "0xtest123",
          day_ago_ms, "FEE", -1.5, "USDC"),
+    )
+    # 2nd funding payment: 3 hours ago (within 1d/3d/7d/14d)
+    con.execute(
+        """
+        INSERT INTO pm_cashflows (position_id, leg_id, venue, account_id, ts, cf_type, amount, currency)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("pos_test_BTC", "pos_test_BTC_PERP", "hyperliquid", "0xtest123",
+         now_ms - 3 * 3600000, "FUNDING", 5.00, "USDC"),
+    )
+    # 3rd funding payment: 5 days ago (within 7d/14d but NOT 1d or 3d)
+    con.execute(
+        """
+        INSERT INTO pm_cashflows (position_id, leg_id, venue, account_id, ts, cf_type, amount, currency)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("pos_test_BTC", "pos_test_BTC_PERP", "hyperliquid", "0xtest123",
+         now_ms - 5 * 86400000, "FUNDING", 25.00, "USDC"),
+    )
+
+    # Position with missing spot leg price (for incomplete_notional test)
+    con.execute(
+        """
+        INSERT INTO pm_positions (position_id, venue, strategy, status, created_at_ms, updated_at_ms, meta_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("pos_test_ETH_WARN", "hyperliquid", "SPOT_PERP", "OPEN",
+         day_ago_ms, now_ms,
+         json.dumps({"base": "ETH", "strategy_type": "SPOT_PERP"})),
+    )
+    # Spot leg: size set but all prices are NULL
+    con.execute(
+        """
+        INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size,
+                             entry_price, current_price, unrealized_pnl, status, opened_at_ms, account_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("pos_test_ETH_WARN_SPOT", "pos_test_ETH_WARN", "hyperliquid", "ETH/USDC",
+         "LONG", 1.0, None, None, None, "OPEN", day_ago_ms, "0xtest123"),
+    )
+    # Perp leg: has price (so partial notional available)
+    con.execute(
+        """
+        INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size,
+                             entry_price, current_price, unrealized_pnl, status, opened_at_ms, account_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("pos_test_ETH_WARN_PERP", "pos_test_ETH_WARN", "hyperliquid", "ETH",
+         "SHORT", 1.0, 3000.0, 3100.0, -100.0, "OPEN", day_ago_ms, "0xtest123"),
+    )
+    con.execute(
+        """
+        INSERT INTO pm_cashflows (position_id, leg_id, venue, account_id, ts, cf_type, amount, currency)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("pos_test_ETH_WARN", "pos_test_ETH_WARN_PERP", "hyperliquid", "0xtest123",
+         now_ms - 3600000, "FUNDING", 10.0, "USDC"),
     )
 
     # Insert account snapshot
@@ -561,6 +620,95 @@ def test_root_endpoint():
 
     os.unlink(db_path)
     print("PASS: test_root_endpoint")
+
+
+# ===================================================================
+# Pytest fixture for windowed metrics tests
+# ===================================================================
+
+@pytest.fixture
+def client():
+    db_path = _setup_test_db()
+    os.environ["HARMONIX_DB_PATH"] = str(db_path)
+    from api.config import get_settings
+    get_settings.cache_clear()
+    from api.main import app
+    with TestClient(app) as c:
+        yield c
+    Path(db_path).unlink(missing_ok=True)
+
+
+def test_positions_windowed_metrics_present(client: TestClient):
+    """windowed field is present in /api/positions response."""
+    resp = client.get("/api/positions?status=OPEN", headers=_headers())
+    assert resp.status_code == 200
+    positions = resp.json()
+    btc = next(p for p in positions if p["position_id"] == "pos_test_BTC")
+    assert btc["windowed"] is not None
+    w = btc["windowed"]
+    assert "funding_1d" in w
+    assert "funding_3d" in w
+    assert "funding_7d" in w
+    assert "funding_14d" in w
+    assert "apr_1d" in w
+    assert "apr_3d" in w
+    assert "apr_7d" in w
+    assert "apr_14d" in w
+    assert "incomplete_notional" in w
+    assert "missing_leg_ids" in w
+
+
+def test_positions_windowed_funding_windows(client: TestClient):
+    """Windowed funding sums respect time boundaries.
+
+    Cashflows for pos_test_BTC:
+      - 5.25 at now - 1h   (in 1d, 3d, 7d, 14d)
+      - 5.00 at now - 3h   (in 1d, 3d, 7d, 14d)
+      - 25.0 at now - 5d   (in 7d, 14d only -- NOT 1d or 3d)
+
+    amount_usd_raw = 0.1 * 60500 (spot current_price) + 0.1 * 60500 (perp current_price) = 12100.0
+    """
+    resp = client.get("/api/positions?status=OPEN", headers=_headers())
+    assert resp.status_code == 200
+    btc = next(p for p in resp.json() if p["position_id"] == "pos_test_BTC")
+    w = btc["windowed"]
+
+    assert w["incomplete_notional"] is False
+    assert w["missing_leg_ids"] == []
+
+    # Funding windows
+    assert w["funding_1d"]  == pytest.approx(10.25, abs=0.01)   # 5.25 + 5.00
+    assert w["funding_3d"]  == pytest.approx(10.25, abs=0.01)   # 5.25 + 5.00
+    assert w["funding_7d"]  == pytest.approx(35.25, abs=0.01)   # 5.25 + 5.00 + 25.0
+    assert w["funding_14d"] == pytest.approx(35.25, abs=0.01)   # same
+
+    # APR for 1d: (10.25 / 1) * 365 / 12100 * 100
+    expected_apr_1d = (10.25 / 1) * 365 / 12100 * 100
+    assert w["apr_1d"] == pytest.approx(expected_apr_1d, rel=0.001)
+
+    # APR for 7d: (35.25 / 7) * 365 / 12100 * 100
+    expected_apr_7d = (35.25 / 7) * 365 / 12100 * 100
+    assert w["apr_7d"] == pytest.approx(expected_apr_7d, rel=0.001)
+
+
+def test_positions_windowed_incomplete_notional(client: TestClient):
+    """incomplete_notional=True when a leg has no price; apr_* are None, funding_* still present."""
+    resp = client.get("/api/positions?status=OPEN", headers=_headers())
+    assert resp.status_code == 200
+    eth = next(p for p in resp.json() if p["position_id"] == "pos_test_ETH_WARN")
+    w = eth["windowed"]
+
+    assert w["incomplete_notional"] is True
+    assert "pos_test_ETH_WARN_SPOT" in w["missing_leg_ids"]
+
+    # APR fields must all be None when notional is incomplete
+    assert w["apr_1d"]  is None
+    assert w["apr_3d"]  is None
+    assert w["apr_7d"]  is None
+    assert w["apr_14d"] is None
+
+    # Funding $ fields still populated (cashflows are trustworthy)
+    assert w["funding_1d"] == pytest.approx(10.0, abs=0.01)
 
 
 # ===================================================================

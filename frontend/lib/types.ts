@@ -36,6 +36,19 @@ export interface SubPair {
   spread_pnl_bps: number | null;
 }
 
+export interface WindowedMetrics {
+  funding_1d:          number | null;
+  funding_3d:          number | null;
+  funding_7d:          number | null;
+  funding_14d:         number | null;
+  apr_1d:              number | null;  // percent form e.g. 38.5 means 38.5%
+  apr_3d:              number | null;
+  apr_7d:              number | null;
+  apr_14d:             number | null;
+  incomplete_notional: boolean;
+  missing_leg_ids:     string[];
+}
+
 export interface Leg {
   leg_id: string;
   venue: string;
@@ -63,6 +76,7 @@ export interface Position {
   sub_pairs: SubPair[];
   legs: Leg[];
   opened_at: string;
+  windowed: WindowedMetrics | null;
 }
 
 // ============================================================

@@ -86,11 +86,11 @@ export default function PositionsTable({ positions }: Props) {
           >
             <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 2a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-.25 3.5h.5a.75.75 0 0 1 .75.75v3.5a.25.25 0 0 0 .25.25h.25v1h-3v-1h.25a.25.25 0 0 0 .25-.25v-2.5a.25.25 0 0 0-.25-.25H6.5v-1h1.25z" />
           </svg>
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 hidden group-hover:block pointer-events-none">
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50 hidden group-hover:block pointer-events-none">
+            <div className="w-2 h-2 bg-gray-900 border-l border-t border-gray-700 rotate-45 mx-auto -mb-1" />
             <div className="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-xs text-gray-200 whitespace-pre-line w-64 shadow-lg">
               {tooltip}
             </div>
-            <div className="w-2 h-2 bg-gray-900 border-r border-b border-gray-700 rotate-45 mx-auto -mt-1" />
           </div>
         </span>
       </th>

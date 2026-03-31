@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { formatUSD, formatPct, formatBps, pnlColor } from "@/lib/format";
 import { avgSubPairBps } from "@/lib/subPairStats";
-import type { Position } from "@/lib/types";
+import type { Position, WindowedMetrics } from "@/lib/types";
 
 interface Props {
   positions: Position[];
@@ -97,6 +97,86 @@ export default function PositionsTable({ positions }: Props) {
     );
   }
 
+  function WindowedAprCell({ w }: { w: WindowedMetrics | null }) {
+    if (!w) {
+      return <td className="text-right tabular-nums text-gray-600">—</td>;
+    }
+
+    if (w.incomplete_notional) {
+      const tipText = `APR unavailable — spot leg price missing.\nAffected legs: ${w.missing_leg_ids.join(", ")}`;
+      return (
+        <td className="text-right tabular-nums">
+          <span className="relative group inline-flex items-center gap-1 justify-end">
+            <svg
+              className="w-3.5 h-3.5 text-yellow-400 group-hover:text-yellow-300 cursor-help"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 2a1 1 0 1 1 0 2 1 1 0 0 1 0-2zm-.25 3.5h.5a.75.75 0 0 1 .75.75v3.5a.25.25 0 0 0 .25.25h.25v1h-3v-1h.25a.25.25 0 0 0 .25-.25v-2.5a.25.25 0 0 0-.25-.25H6.5v-1h1.25z" />
+            </svg>
+            <div className="absolute bottom-full right-0 mb-2 z-50 hidden group-hover:block pointer-events-none">
+              <div className="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-xs text-gray-200 whitespace-pre-line w-64 shadow-lg text-left">
+                {tipText}
+              </div>
+              <div className="w-2 h-2 bg-gray-900 border-r border-b border-gray-700 rotate-45 ml-auto mr-2 -mt-1" />
+            </div>
+          </span>
+        </td>
+      );
+    }
+
+    const windows: Array<{ label: string; value: number | null }> = [
+      { label: "1d",  value: w.apr_1d  },
+      { label: "3d",  value: w.apr_3d  },
+      { label: "7d",  value: w.apr_7d  },
+      { label: "14d", value: w.apr_14d },
+    ];
+
+    return (
+      <td className="tabular-nums">
+        <div className="grid grid-cols-4 gap-x-2 text-xs min-w-[140px]">
+          {windows.map(({ label }) => (
+            <span key={label} className="text-gray-500 text-center">{label}</span>
+          ))}
+          {windows.map(({ label, value }) => (
+            <span key={label} className={`text-center ${pnlColor(value)}`}>
+              {formatPct(value, 1)}
+            </span>
+          ))}
+        </div>
+      </td>
+    );
+  }
+
+  function WindowedFundingCell({ w }: { w: WindowedMetrics | null }) {
+    if (!w) {
+      return <td className="text-right tabular-nums text-gray-600">—</td>;
+    }
+
+    const windows: Array<{ label: string; value: number | null }> = [
+      { label: "1d",  value: w.funding_1d  },
+      { label: "3d",  value: w.funding_3d  },
+      { label: "7d",  value: w.funding_7d  },
+      { label: "14d", value: w.funding_14d },
+    ];
+
+    return (
+      <td className="tabular-nums">
+        <div className="grid grid-cols-4 gap-x-2 text-xs min-w-[160px]">
+          {windows.map(({ label }) => (
+            <span key={label} className="text-gray-500 text-center">{label}</span>
+          ))}
+          {windows.map(({ label, value }) => (
+            <span key={label} className="text-center text-gray-200">
+              {formatUSD(value)}
+            </span>
+          ))}
+        </div>
+      </td>
+    );
+  }
+
   return (
     <div className="card">
       <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">
@@ -112,6 +192,14 @@ export default function PositionsTable({ positions }: Props) {
               <SortHeader label="uPnL" sortId="unrealized_pnl" />
               <SortHeader label="Funding" sortId="funding_earned" />
               <SortHeader label="Carry APR" sortId="carry_apr" />
+              <TooltipHeader
+                label="APR (realized)"
+                tooltip={`Realized APR from pm_cashflows.\nAnnualized from actual funding earned per window.\nNot a market rate.`}
+              />
+              <TooltipHeader
+                label="Funding $ (realized)"
+                tooltip={`Realized funding cashflows from pm_cashflows.\n1d / 3d / 7d / 14d cumulative totals.`}
+              />
               <TooltipHeader
                 label="Exit Spread"
                 tooltip={`Exit Spread = (spot_bid / perp_ask) - 1\nMeasures the current basis cost to close the position.\nNegative = you'd lose that many bps on the round-trip.`}
@@ -164,6 +252,8 @@ export default function PositionsTable({ positions }: Props) {
                   <td className={`text-right tabular-nums ${pnlColor(p.carry_apr)}`}>
                     {p.carry_apr != null ? formatPct(p.carry_apr, 1) : "\u2014"}
                   </td>
+                  <WindowedAprCell w={p.windowed} />
+                  <WindowedFundingCell w={p.windowed} />
                   <td className="text-right tabular-nums">
                     {formatBps(avgExitSpread)}
                   </td>

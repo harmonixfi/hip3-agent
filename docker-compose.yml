@@ -12,6 +12,7 @@ services:
       - ./.arbit_env:/app/.arbit_env:ro        # Env vars (read-only)
       - ./config:/app/config:ro                # Position + equity config
       - ./logs:/app/logs                       # Cron logs (persistent)
+      - ./data:/app/data                       # Funding data CSVs (persistent)
     environment:
       - TZ=UTC
     healthcheck:

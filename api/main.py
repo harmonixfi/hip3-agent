@@ -91,13 +91,14 @@ async def api_key_auth(request: Request, call_next) -> Response:
 # -------------------------------------------------------------------
 # Register routers
 # -------------------------------------------------------------------
-from api.routers import portfolio, positions, cashflows, health, vault  # noqa: E402
+from api.routers import portfolio, positions, cashflows, health, vault, candidates  # noqa: E402
 
 app.include_router(portfolio.router)
 app.include_router(positions.router)
 app.include_router(cashflows.router)
 app.include_router(health.router)
 app.include_router(vault.router)
+app.include_router(candidates.router)
 
 
 def custom_openapi() -> dict:

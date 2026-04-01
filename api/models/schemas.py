@@ -209,3 +209,27 @@ class HealthResponse(BaseModel):
     felix_jwt_expires_at: Optional[str] = None
     open_positions: int
     uptime_seconds: float
+
+
+# ============================================================
+# Candidates — GET /api/candidates
+# ============================================================
+
+class Candidate(BaseModel):
+    rank: int
+    symbol: str
+    venue: str
+    apr_14d: Optional[float]
+    apr_7d: Optional[float]
+    apr_1d: Optional[float]
+    apr_3d: Optional[float]
+    stability_score: Optional[float]
+    flags: str
+    tradeability_status: str
+
+
+class CandidatesResponse(BaseModel):
+    general: list[Candidate]
+    equities: list[Candidate]
+    as_of: str   # ISO 8601 — CSV file mtime
+    total: int

@@ -32,4 +32,4 @@
 50 2 * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && .venv/bin/python scripts/db_v3_backup.py --keep-days 14 >> logs/db_v3_backup.log 2>&1
 
 # Daily candidates export (7:00 AM GMT+7 = 00:00 UTC)
-0 0 * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && .venv/bin/python scripts/export_core_candidates.py >> logs/export_core_candidates.log 2>&1
+0 0 * * * cd /Users/harmonix/.openclaw/workspace-hip3-agent && source .arbit_env && .venv/bin/python scripts/export_core_candidates.py --csv data/core_candidates_export.csv >> logs/export_core_candidates.log 2>&1

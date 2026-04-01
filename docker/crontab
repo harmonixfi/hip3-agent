@@ -15,6 +15,6 @@
 5 2 * * * cd /app && env $(cat /etc/environment | xargs) python scripts/vault_daily_snapshot.py >> /app/logs/vault_daily_snapshot.log 2>&1
 
 # Daily candidates export (7:00 AM GMT+7 = 00:00 UTC)
-0 0 * * * cd /app && env $(cat /etc/environment | xargs) python scripts/export_core_candidates.py >> /app/logs/export_core_candidates.log 2>&1
+0 0 * * * cd /app && env $(cat /etc/environment | xargs) python scripts/export_core_candidates.py --csv data/core_candidates_export.csv >> /app/logs/export_core_candidates.log 2>&1
 
 # Empty line required by cron

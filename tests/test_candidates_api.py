@@ -10,14 +10,13 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 TEST_API_KEY = "test-key-12345"
 os.environ["HARMONIX_API_KEY"] = TEST_API_KEY
 
+from api.main import app  # noqa: E402
 from fastapi.testclient import TestClient
 
 
@@ -79,7 +78,6 @@ def test_get_candidates_splits_general_and_equities():
     _make_csv(csv_path, SAMPLE_ROWS)
 
     with patch("api.routers.candidates.CSV_PATH", csv_path):
-        from api.main import app
         client = TestClient(app)
         resp = client.get("/api/candidates", headers=_headers())
 
@@ -112,7 +110,6 @@ def test_get_candidates_sorted_by_stability_score():
     _make_csv(csv_path, rows)
 
     with patch("api.routers.candidates.CSV_PATH", csv_path):
-        from api.main import app
         client = TestClient(app)
         resp = client.get("/api/candidates", headers=_headers())
 
@@ -130,7 +127,6 @@ def test_get_candidates_rank_is_1_based_per_tab():
     _make_csv(csv_path, SAMPLE_ROWS[:2])
 
     with patch("api.routers.candidates.CSV_PATH", csv_path):
-        from api.main import app
         client = TestClient(app)
         resp = client.get("/api/candidates", headers=_headers())
 
@@ -146,16 +142,14 @@ def test_get_candidates_rank_is_1_based_per_tab():
 def test_get_candidates_missing_csv_returns_503():
     missing = Path("/tmp/does_not_exist_candidates.csv")
     with patch("api.routers.candidates.CSV_PATH", missing):
-        from api.main import app
         client = TestClient(app)
         resp = client.get("/api/candidates", headers=_headers())
     assert resp.status_code == 503
 
 
-def test_refresh_candidates_calls_script(tmp_path):
+def test_refresh_candidates_calls_script():
     with patch("api.routers.candidates.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
-        from api.main import app
         client = TestClient(app)
         resp = client.post("/api/candidates/refresh", headers=_headers())
 
@@ -170,7 +164,6 @@ def test_refresh_candidates_script_failure_returns_500():
     with patch("api.routers.candidates.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 1
         mock_run.return_value.stderr = "script error"
-        from api.main import app
         client = TestClient(app)
         resp = client.post("/api/candidates/refresh", headers=_headers())
 

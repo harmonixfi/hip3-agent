@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Candidate, CandidatesResponse } from "@/lib/types";
 
@@ -78,30 +78,31 @@ interface Props {
 
 export default function CandidatesClient({ data }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("general");
-  const [isPending, startTransition] = useTransition();
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const router = useRouter();
 
-  function handleRefresh() {
+  async function handleRefresh() {
     setRefreshError(null);
-    startTransition(async () => {
-      try {
-        const res = await fetch("/api/candidates/refresh", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          setRefreshError(body.detail ?? "Refresh failed");
-          return;
-        }
-        router.refresh();
-      } catch {
-        setRefreshError("Network error — could not reach API");
+    setIsRefreshing(true);
+    try {
+      const res = await fetch("/api/candidates/refresh", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setRefreshError(body.detail ?? "Refresh failed");
+        return;
       }
-    });
+      router.refresh();
+    } catch {
+      setRefreshError("Network error — could not reach API");
+    } finally {
+      setIsRefreshing(false);
+    }
   }
 
   const rows = activeTab === "general" ? data.general : data.equities;
@@ -131,10 +132,10 @@ export default function CandidatesClient({ data }: Props) {
 
         <button
           onClick={handleRefresh}
-          disabled={isPending}
+          disabled={isRefreshing}
           className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {isPending ? (
+          {isRefreshing ? (
             <>
               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

@@ -7,6 +7,10 @@ import type {
   HealthStatus,
   ManualCashflowRequest,
   ManualCashflowResponse,
+  VaultOverview,
+  VaultSnapshot,
+  VaultCashflow,
+  StrategyDetail,
 } from "./types";
 
 const API_BASE_URL = process.env.API_BASE_URL;
@@ -14,7 +18,7 @@ const API_KEY = process.env.API_KEY;
 const CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID;
 const CF_ACCESS_CLIENT_SECRET = process.env.CF_ACCESS_CLIENT_SECRET;
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
@@ -107,6 +111,43 @@ export async function postManualCashflow(
   data: ManualCashflowRequest,
 ): Promise<ManualCashflowResponse> {
   return apiFetch<ManualCashflowResponse>("/api/cashflows/manual", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// ---- Vault ----
+
+export async function fetchVaultOverview(): Promise<VaultOverview> {
+  return apiFetch<VaultOverview>("/api/vault/overview");
+}
+
+export async function fetchVaultSnapshots(limit = 30): Promise<VaultSnapshot[]> {
+  return apiFetch<VaultSnapshot[]>(`/api/vault/snapshots?limit=${limit}`);
+}
+
+export async function fetchVaultCashflows(limit = 50): Promise<VaultCashflow[]> {
+  return apiFetch<VaultCashflow[]>(`/api/vault/cashflows?limit=${limit}`);
+}
+
+export async function fetchVaultStrategyDetail(
+  strategyId: string,
+): Promise<StrategyDetail> {
+  return apiFetch<StrategyDetail>(
+    `/api/vault/strategies/${encodeURIComponent(strategyId)}`,
+  );
+}
+
+export async function createVaultCashflow(data: {
+  cf_type: string;
+  amount: number;
+  strategy_id?: string;
+  from_strategy_id?: string;
+  to_strategy_id?: string;
+  ts?: number;
+  description?: string;
+}): Promise<{ cashflow_id: number; recalculated: boolean; message: string }> {
+  return apiFetch("/api/vault/cashflows", {
     method: "POST",
     body: JSON.stringify(data),
   });

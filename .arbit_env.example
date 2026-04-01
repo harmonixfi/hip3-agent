@@ -20,3 +20,10 @@ export HYPERLIQUID_ADDRESS=""
 # Lighter
 # Optional: If different from ETHEREAL_ACCOUNT_ADDRESS
 export LIGHTER_L1_ADDRESS=""
+
+# harmonix-nav-platform PostgreSQL (vault LendingProvider — optional)
+# export HARMONIX_NAV_DB_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE"
+# Lending equity = sum of latest per-vault underlying from raw ERC4626 hourly (defaults in tracking/vault/providers/lending.py)
+# export HARMONIX_LENDING_CHAIN_ID="999"
+# export HARMONIX_LENDING_ERC4626_ACCOUNT="0x..."
+# export HARMONIX_LENDING_ERC4626_VAULTS="0xvault1,0xvault2"

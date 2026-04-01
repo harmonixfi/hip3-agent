@@ -24,7 +24,8 @@ CSV_PATH = ROOT / "data" / "core_candidates_export.csv"
 SCRIPT_PATH = ROOT / "scripts" / "export_core_candidates.py"
 PYTHON_BIN = ROOT / ".venv" / "bin" / "python"
 
-APR14_FLOOR = 20.0
+APR14_FLOOR = 5.0
+TOP_N = 20
 
 
 def _parse_float(value: str) -> Optional[float]:
@@ -71,6 +72,8 @@ def _load_candidates() -> tuple[list[Candidate], list[Candidate], str]:
     for row in filtered:
         is_equity = row.get("spot_on_felix", "").strip().lower() == "true"
         target = equities if is_equity else general
+        if len(target) >= TOP_N:
+            continue
         rank = len(target) + 1
         target.append(Candidate(
             rank=rank,

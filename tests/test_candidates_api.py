@@ -64,8 +64,8 @@ SAMPLE_ROWS = [
         "tradeability_status": "NON_EXECUTABLE", "pair_quality_score": "40.0",
         "stability_score": "20.0", "effective_apr_anchor": "10.0",
         "oi_rank": "50", "breakeven_estimate_days": "30.0",
-        "apr_latest": "10.0", "apr_1d": "10.0", "apr_3d": "10.0",
-        "apr_7d": "10.0", "apr_14d": "10.0",   # below 20% floor
+        "apr_latest": "1.0", "apr_1d": "1.0", "apr_3d": "1.0",
+        "apr_7d": "1.0", "apr_14d": "1.0",   # below 5% floor
         "spot_on_hyperliquid": "False", "spot_on_felix": "False",
         "freshness_hours": "2.0", "flags": "MISSING_SPOT",
     },

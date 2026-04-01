@@ -124,8 +124,8 @@ def _windowed_metrics(
     funding_14d = _to_funding(row["funding_14d"] if row else None)
 
     # Step 3: derive APR (percent form). All None if incomplete_notional.
-    def _apr(funding: Optional[float], days: int) -> Optional[float]:
-        if incomplete_notional or funding is None:
+    def _apr(funding: Optional[float], days: float) -> Optional[float]:
+        if incomplete_notional or funding is None or days <= 0:
             return None
         return round((funding / days) * 365 / amount_usd_raw * 100, 4)
 
@@ -134,15 +134,21 @@ def _windowed_metrics(
     apr_7d  = _apr(funding_7d, 7)
     apr_14d = _apr(funding_14d, 14)
 
-    # Step 4: null out windows wider than position age
+    # Step 4: null out windows wider than position age.
+    # For partial windows (3d <= age < 7d, 7d <= age < 14d), show all-time total
+    # with APR computed over actual elapsed days instead of the full window.
     if created_at_ms is not None:
         days_open = (now_ms - created_at_ms) / (86400 * 1000)
         if days_open < 3:
             funding_3d = None; apr_3d = None
-        if days_open < 7:
+        if days_open < 3:
             funding_7d = None; apr_7d = None
-        if days_open < 14:
+        elif days_open < 7:
+            apr_7d = _apr(funding_7d, days_open)
+        if days_open < 7:
             funding_14d = None; apr_14d = None
+        elif days_open < 14:
+            apr_14d = _apr(funding_14d, days_open)
 
     return WindowedMetrics(
         funding_1d=funding_1d,

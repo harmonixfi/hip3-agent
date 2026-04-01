@@ -248,3 +248,27 @@ export interface StrategyDetail {
   equity_breakdown: Record<string, unknown> | null;
   wallets: { wallet_label: string; venue: string }[] | null;
 }
+
+// ============================================================
+// Candidates — GET /api/candidates
+// ============================================================
+
+export interface Candidate {
+  rank: number;
+  symbol: string;
+  venue: string;
+  apr_14d: number | null;
+  apr_7d: number | null;
+  apr_1d: number | null;
+  apr_3d: number | null;
+  stability_score: number | null;
+  flags: string;
+  tradeability_status: string;
+}
+
+export interface CandidatesResponse {
+  general: Candidate[];
+  equities: Candidate[];
+  as_of: string;
+  total: number;
+}

@@ -11,6 +11,7 @@ import type {
   VaultSnapshot,
   VaultCashflow,
   StrategyDetail,
+  CandidatesResponse,
 } from "./types";
 
 const API_BASE_URL = process.env.API_BASE_URL;
@@ -150,5 +151,17 @@ export async function createVaultCashflow(data: {
   return apiFetch("/api/vault/cashflows", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+// ---- Candidates ----
+
+export async function getCandidates(): Promise<CandidatesResponse> {
+  return apiFetch<CandidatesResponse>("/api/candidates");
+}
+
+export async function refreshCandidates(): Promise<{ ok: boolean; elapsed_s: number }> {
+  return apiFetch<{ ok: boolean; elapsed_s: number }>("/api/candidates/refresh", {
+    method: "POST",
   });
 }

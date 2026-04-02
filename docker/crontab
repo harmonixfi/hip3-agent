@@ -14,6 +14,9 @@
 # Vault multi-strategy snapshot (daily 02:05 UTC — needs HARMONIX_NAV_DB_URL for Lending ERC4626)
 5 2 * * * cd /app && env $(cat /etc/environment | xargs) python scripts/vault_daily_snapshot.py >> /app/logs/vault_daily_snapshot.log 2>&1
 
+# Realized funding/fees ledger ingest (hourly at :37)
+37 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pm_cashflows.py ingest --venues hyperliquid >> /app/logs/pm_cashflows_ingest.log 2>&1
+
 # Daily candidates export (7:00 AM GMT+7 = 00:00 UTC)
 0 0 * * * cd /app && env $(cat /etc/environment | xargs) python scripts/export_core_candidates.py --csv data/core_candidates_export.csv >> /app/logs/export_core_candidates.log 2>&1
 

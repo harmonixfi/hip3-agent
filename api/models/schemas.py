@@ -21,6 +21,26 @@ class AccountEquity(BaseModel):
     venue: str
 
 
+class AccountUtilization(BaseModel):
+    label: str
+    venue: str
+    equity_usd: float
+    margin_used_usd: float
+    available_usd: float
+    position_value_usd: float
+    leverage: float
+
+
+class FundUtilization(BaseModel):
+    total_equity_usd: float
+    total_notional_usd: float
+    total_deployed_usd: float
+    total_available_usd: float
+    leverage: float
+    deployed_pct: float
+    accounts: list[AccountUtilization]
+
+
 class PortfolioOverview(BaseModel):
     total_equity_usd: float
     equity_by_account: dict[str, AccountEquity]
@@ -35,6 +55,7 @@ class PortfolioOverview(BaseModel):
     open_positions_count: int
     total_unrealized_pnl: float
     as_of: str  # ISO 8601
+    fund_utilization: Optional[FundUtilization] = None
 
 
 # ============================================================

@@ -188,7 +188,7 @@
     "position_id": "pos_xyz_GOLD",
     "strategy_type": "SPOT_PERP",
     "base": "GOLD",
-    "status": "OPEN",
+    "status": "CLOSED",
     "amount_usd": 2971.42,
     "legs": [
       {

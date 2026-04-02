@@ -2,6 +2,7 @@ import { getPortfolioOverview, getOpenPositions, getHealth, fetchVaultOverview }
 import EquityCard from "@/components/EquityCard";
 import WalletBreakdown from "@/components/WalletBreakdown";
 import FundingSummary from "@/components/FundingSummary";
+import FundUtilizationCard from "@/components/FundUtilizationCard";
 import PositionsTable from "@/components/PositionsTable";
 import HealthStatus from "@/components/HealthStatus";
 import VaultSummary from "@/components/VaultSummary";
@@ -72,11 +73,12 @@ export default async function DashboardPage() {
         </section>
       )}
 
-      {/* Top row: Equity + Wallets + Funding */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Top row: Equity + Wallets + Funding + Utilization */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <EquityCard data={portfolioData} />
         <WalletBreakdown data={portfolioData} />
         <FundingSummary data={portfolioData} />
+        <FundUtilizationCard data={portfolioData.fund_utilization} />
       </div>
 
       {/* Open Positions */}

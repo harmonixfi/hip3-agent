@@ -38,7 +38,6 @@ def _parse_ymd_strict(s: str) -> str:
 def _compute_fund_utilization(
     db: sqlite3.Connection,
     total_equity: float,
-    account_rows: list[sqlite3.Row],
 ) -> FundUtilization:
     """Compute leverage, deployed/available capital from live DB data.
 
@@ -267,7 +266,7 @@ def portfolio_overview(
                 pass
 
     net_pnl = funding_alltime + fees_alltime
-    fund_util = _compute_fund_utilization(db, total_equity, account_rows)
+    fund_util = _compute_fund_utilization(db, total_equity)
     daily_change_pct: Optional[float] = (
         (daily_change / (total_equity - daily_change) * 100)
         if daily_change is not None and total_equity and total_equity != daily_change

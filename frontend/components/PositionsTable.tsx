@@ -231,6 +231,7 @@ export default function PositionsTable({ positions }: Props) {
             {sorted.map((p) => {
               const avgExitSpread = avgSubPairBps(p.sub_pairs, "exit_spread_bps");
               const avgSpreadPnl = avgSubPairBps(p.sub_pairs, "spread_pnl_bps");
+              const allocPct = getAllocPct(p);
 
               return (
                 <tr key={p.position_id} className="hover:bg-gray-800/50 transition-colors">
@@ -260,8 +261,8 @@ export default function PositionsTable({ positions }: Props) {
                   <td className="text-right tabular-nums">
                     {formatUSD(p.amount_usd)}
                   </td>
-                  <td className={`text-right tabular-nums ${allocColor(getAllocPct(p))}`}>
-                    {getAllocPct(p).toFixed(1)}%
+                  <td className={`text-right tabular-nums ${allocColor(allocPct)}`}>
+                    {allocPct.toFixed(1)}%
                   </td>
                   <td className={`text-right tabular-nums ${pnlColor(p.unrealized_pnl)}`}>
                     {formatUSD(p.unrealized_pnl)}

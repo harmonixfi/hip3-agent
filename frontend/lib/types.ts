@@ -22,6 +22,31 @@ export interface PortfolioOverview {
   open_positions_count: number;
   total_unrealized_pnl: number;
   as_of: string;
+  fund_utilization: FundUtilization | null;
+}
+
+// ============================================================
+// Fund Utilization — nested in /api/portfolio/overview
+// ============================================================
+
+export interface AccountUtilization {
+  label: string;
+  venue: string;
+  equity_usd: number;
+  margin_used_usd: number;
+  available_usd: number;
+  position_value_usd: number;
+  leverage: number;
+}
+
+export interface FundUtilization {
+  total_equity_usd: number;
+  total_notional_usd: number;
+  total_deployed_usd: number;
+  total_available_usd: number;
+  leverage: number;
+  deployed_pct: number;
+  accounts: AccountUtilization[];
 }
 
 // ============================================================

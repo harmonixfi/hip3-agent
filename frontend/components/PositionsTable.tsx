@@ -13,6 +13,7 @@ interface Props {
 type SortKey =
   | "base"
   | "amount_usd"
+  | "alloc_pct"
   | "unrealized_pnl"
   | "funding_earned"
   | "carry_apr"
@@ -21,6 +22,19 @@ type SortKey =
 export default function PositionsTable({ positions }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("base");
   const [sortAsc, setSortAsc] = useState(true);
+
+  const totalNotional = positions.reduce((sum, p) => sum + (p.amount_usd ?? 0), 0);
+
+  function getAllocPct(p: Position): number {
+    if (!totalNotional || p.amount_usd == null) return 0;
+    return (p.amount_usd / totalNotional) * 100;
+  }
+
+  function allocColor(pct: number): string {
+    if (pct > 50) return "text-red-400";
+    if (pct >= 40) return "text-yellow-400";
+    return "";
+  }
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -37,6 +51,8 @@ export default function PositionsTable({ positions }: Props) {
         return p.base;
       case "amount_usd":
         return p.amount_usd;
+      case "alloc_pct":
+        return getAllocPct(p);
       case "unrealized_pnl":
         return p.unrealized_pnl ?? 0;
       case "funding_earned":
@@ -189,6 +205,7 @@ export default function PositionsTable({ positions }: Props) {
               <SortHeader label="Base" sortId="base" />
               <th>Status</th>
               <SortHeader label="Amount" sortId="amount_usd" />
+              <SortHeader label="Alloc %" sortId="alloc_pct" />
               <SortHeader label="uPnL" sortId="unrealized_pnl" />
               <SortHeader label="Funding" sortId="funding_earned" />
               <SortHeader label="Carry APR" sortId="carry_apr" />
@@ -242,6 +259,9 @@ export default function PositionsTable({ positions }: Props) {
                   </td>
                   <td className="text-right tabular-nums">
                     {formatUSD(p.amount_usd)}
+                  </td>
+                  <td className={`text-right tabular-nums ${allocColor(getAllocPct(p))}`}>
+                    {getAllocPct(p).toFixed(1)}%
                   </td>
                   <td className={`text-right tabular-nums ${pnlColor(p.unrealized_pnl)}`}>
                     {formatUSD(p.unrealized_pnl)}

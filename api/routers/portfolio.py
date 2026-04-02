@@ -16,7 +16,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import get_db
-from api.models.schemas import AccountEquity, PortfolioOverview
+from api.models.schemas import AccountEquity, AccountUtilization, FundUtilization, PortfolioOverview
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -33,6 +33,93 @@ def _parse_ymd_strict(s: str) -> str:
     raw = s.strip()
     datetime.strptime(raw, "%Y-%m-%d")
     return raw
+
+
+def _compute_fund_utilization(
+    db: sqlite3.Connection,
+    total_equity: float,
+    account_rows: list[sqlite3.Row],
+) -> FundUtilization:
+    """Compute leverage, deployed/available capital from live DB data.
+
+    Multi-venue ready: queries are filtered by venue and account_id from
+    pm_account_snapshots. Adding a new venue only requires populating
+    the same snapshot tables.
+    """
+    # 1. Per-account available/margin from latest snapshots (already fetched in caller
+    #    but we need extra columns, so re-query with full columns)
+    acct_detail_rows = db.execute(
+        """
+        SELECT a.account_id, a.venue, a.total_balance,
+               a.available_balance, a.margin_balance, a.position_value
+        FROM pm_account_snapshots a
+        INNER JOIN (
+            SELECT account_id, MAX(ts) AS max_ts
+            FROM pm_account_snapshots
+            GROUP BY account_id
+        ) latest ON a.account_id = latest.account_id AND a.ts = latest.max_ts
+        """
+    ).fetchall()
+
+    # 2. Per-account notional from OPEN/PAUSED/EXITING legs
+    leg_notional_rows = db.execute(
+        """
+        SELECT l.account_id,
+               SUM(ABS(l.size * COALESCE(l.current_price, ep.avg_entry_price, l.entry_price))) AS notional
+        FROM pm_legs l
+        LEFT JOIN pm_entry_prices ep ON ep.leg_id = l.leg_id
+        INNER JOIN pm_positions p ON p.position_id = l.position_id
+        WHERE p.status IN ('OPEN', 'PAUSED', 'EXITING')
+          AND l.size IS NOT NULL
+        GROUP BY l.account_id
+        """
+    ).fetchall()
+
+    acct_notional_map: dict[str, float] = {}
+    for row in leg_notional_rows:
+        aid = row["account_id"] or "__unknown__"
+        acct_notional_map[aid] = row["notional"] or 0.0
+
+    # 3. Build per-account utilization
+    accounts: list[AccountUtilization] = []
+    total_notional = 0.0
+    total_available = 0.0
+
+    for arow in acct_detail_rows:
+        aid = arow["account_id"]
+        label = _account_label(aid)
+        equity = arow["total_balance"] or 0.0
+        available = arow["available_balance"] or 0.0
+        margin_used = arow["margin_balance"] or 0.0
+        pos_value = acct_notional_map.get(aid, 0.0)
+
+        acct_leverage = pos_value / equity if equity > 0 else 0.0
+        total_notional += pos_value
+        total_available += available
+
+        accounts.append(AccountUtilization(
+            label=label,
+            venue=arow["venue"],
+            equity_usd=round(equity, 2),
+            margin_used_usd=round(margin_used, 2),
+            available_usd=round(available, 2),
+            position_value_usd=round(pos_value, 2),
+            leverage=round(acct_leverage, 2),
+        ))
+
+    # 4. Aggregate
+    leverage = total_notional / total_equity if total_equity > 0 else 0.0
+    deployed_pct = (total_notional / total_equity * 100) if total_equity > 0 else 0.0
+
+    return FundUtilization(
+        total_equity_usd=round(total_equity, 2),
+        total_notional_usd=round(total_notional, 2),
+        total_deployed_usd=round(total_notional, 2),
+        total_available_usd=round(total_available, 2),
+        leverage=round(leverage, 2),
+        deployed_pct=round(deployed_pct, 1),
+        accounts=accounts,
+    )
 
 
 @router.get("/overview", response_model=PortfolioOverview)
@@ -180,6 +267,7 @@ def portfolio_overview(
                 pass
 
     net_pnl = funding_alltime + fees_alltime
+    fund_util = _compute_fund_utilization(db, total_equity, account_rows)
     daily_change_pct: Optional[float] = (
         (daily_change / (total_equity - daily_change) * 100)
         if daily_change is not None and total_equity and total_equity != daily_change
@@ -200,6 +288,7 @@ def portfolio_overview(
         open_positions_count=open_count,
         total_unrealized_pnl=round(total_upnl, 2) if total_upnl else 0.0,
         as_of=_ts_to_iso(snap_ts),
+        fund_utilization=fund_util,
     )
 
 

@@ -1,6 +1,6 @@
 import type { SubPair } from "./types";
 
-export type SubPairBpsKey = "exit_spread_bps" | "spread_pnl_bps";
+export type SubPairBpsKey = "entry_spread_bps" | "exit_spread_bps" | "spread_pnl_bps";
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);

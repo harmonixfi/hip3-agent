@@ -218,6 +218,10 @@ export default function PositionsTable({ positions }: Props) {
                 tooltip={`Realized funding cashflows from pm_cashflows.\n1d / 3d / 7d / 14d cumulative totals.`}
               />
               <TooltipHeader
+                label="Entry Spread"
+                tooltip={`Entry Spread = (spot_ask / perp_bid) - 1 at time of entry.\nThe basis cost when the position was opened.`}
+              />
+              <TooltipHeader
                 label="Exit Spread"
                 tooltip={`Exit Spread = (spot_bid / perp_ask) - 1\nMeasures the current basis cost to close the position.\nNegative = you'd lose that many bps on the round-trip.`}
               />
@@ -229,6 +233,7 @@ export default function PositionsTable({ positions }: Props) {
           </thead>
           <tbody>
             {sorted.map((p) => {
+              const avgEntrySpread = avgSubPairBps(p.sub_pairs, "entry_spread_bps");
               const avgExitSpread = avgSubPairBps(p.sub_pairs, "exit_spread_bps");
               const avgSpreadPnl = avgSubPairBps(p.sub_pairs, "spread_pnl_bps");
               const allocPct = getAllocPct(p);
@@ -275,6 +280,9 @@ export default function PositionsTable({ positions }: Props) {
                   </td>
                   <WindowedAprCell w={p.windowed} />
                   <WindowedFundingCell w={p.windowed} />
+                  <td className="text-right tabular-nums">
+                    {formatBps(avgEntrySpread)}
+                  </td>
                   <td className="text-right tabular-nums">
                     {formatBps(avgExitSpread)}
                   </td>

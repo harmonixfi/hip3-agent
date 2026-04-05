@@ -7,6 +7,7 @@ import type {
   HealthStatus,
   ManualCashflowRequest,
   ManualCashflowResponse,
+  ManualCashflowListResponse,
   VaultOverview,
   VaultSnapshot,
   VaultCashflow,
@@ -14,6 +15,7 @@ import type {
   CandidatesResponse,
 } from "./types";
 
+/** Server-side only. Browser code uses `/api/harmonix/*` proxy (see `app/api/harmonix/[...path]/route.ts`). */
 const API_BASE_URL = process.env.API_BASE_URL;
 const API_KEY = process.env.API_KEY;
 const CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID;
@@ -29,17 +31,29 @@ export class ApiError extends Error {
   }
 }
 
+/** Same-origin proxy path for client; FastAPI path always starts with `/api/`. */
+function harmonixProxyUrl(path: string): string {
+  const qIdx = path.indexOf("?");
+  const pathPart = qIdx >= 0 ? path.slice(0, qIdx) : path;
+  const query = qIdx >= 0 ? path.slice(qIdx) : "";
+  const rest = pathPart.replace(/^\/api\/?/, "");
+  return `/api/harmonix/${rest}${query}`;
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  if (!API_BASE_URL) {
-    throw new Error("API_BASE_URL environment variable is not set");
+  const isServer = typeof window === "undefined";
+
+  if (isServer && !API_BASE_URL) {
+    throw new Error("Set API_BASE_URL in frontend/.env.local");
   }
 
-  const url = `${API_BASE_URL}${path}`;
+  const url = isServer ? `${API_BASE_URL}${path}` : harmonixProxyUrl(path);
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
 
-  if (API_KEY) {
+  if (isServer && API_KEY) {
     headers["X-API-Key"] = API_KEY;
   }
 
@@ -54,8 +68,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       ...headers,
       ...options?.headers,
     },
-    // Revalidate every 60 seconds (ISR-style caching for server components)
-    next: { revalidate: 60 },
+    ...(isServer ? { next: { revalidate: 60 } } : {}),
   });
 
   if (!res.ok) {
@@ -115,6 +128,15 @@ export async function postManualCashflow(
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+export async function getManualCashflows(
+  limit = 50,
+): Promise<ManualCashflowListResponse> {
+  const q = new URLSearchParams({ limit: String(limit) });
+  return apiFetch<ManualCashflowListResponse>(
+    `/api/cashflows/manual?${q.toString()}`,
+  );
 }
 
 // ---- Vault ----

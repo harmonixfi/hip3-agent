@@ -648,6 +648,131 @@ def test_manual_cashflow_validation():
     print("PASS: test_manual_cashflow_validation")
 
 
+def test_list_manual_cashflows_requires_auth():
+    """GET /api/cashflows/manual without X-API-Key returns 401."""
+    db_path = _setup_test_db()
+    client = _get_test_client(db_path)
+
+    response = client.get("/api/cashflows/manual")
+    assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+
+    os.unlink(db_path)
+    print("PASS: test_list_manual_cashflows_requires_auth")
+
+
+def test_options_preflight_skips_api_key():
+    """CORS preflight OPTIONS must not require X-API-Key (browser sends no key on OPTIONS)."""
+    db_path = _setup_test_db()
+    client = _get_test_client(db_path)
+
+    response = client.options(
+        "/api/cashflows/manual?limit=50",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "content-type, x-api-key",
+        },
+    )
+    assert response.status_code == 200, f"Expected 200 for OPTIONS, got {response.status_code}"
+
+    os.unlink(db_path)
+    print("PASS: test_options_preflight_skips_api_key")
+
+
+def test_list_manual_cashflows_after_post():
+    """POST manual cashflow then GET /api/cashflows/manual returns the row."""
+    db_path = _setup_test_db()
+    client = _get_test_client(db_path)
+
+    ts_ms = int(time.time() * 1000)
+    body = {
+        "account_id": "0xmanual_list_test",
+        "venue": "hyperliquid",
+        "cf_type": "DEPOSIT",
+        "amount": 1234.56,
+        "currency": "USDC",
+        "description": "list test",
+        "ts": ts_ms,
+    }
+    post = client.post("/api/cashflows/manual", json=body, headers=_headers())
+    assert post.status_code == 201
+    cf_id = post.json()["cashflow_id"]
+
+    get_resp = client.get("/api/cashflows/manual?limit=50", headers=_headers())
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["limit"] == 50
+    assert isinstance(data["items"], list)
+    match = next((x for x in data["items"] if x["cashflow_id"] == cf_id), None)
+    assert match is not None
+    assert match["ts"] == ts_ms
+    assert match["cf_type"] == "DEPOSIT"
+    assert match["amount"] == pytest.approx(1234.56)
+    assert match["currency"] == "USDC"
+    assert match["venue"] == "hyperliquid"
+    assert match["account_id"] == "0xmanual_list_test"
+    assert match["description"] == "list test"
+
+    os.unlink(db_path)
+    print("PASS: test_list_manual_cashflows_after_post")
+
+
+def test_list_manual_cashflows_excludes_non_manual_meta():
+    """DEPOSIT rows without meta source=manual are not listed."""
+    db_path = _setup_test_db()
+    client = _get_test_client(db_path)
+
+    con = sqlite3.connect(str(db_path))
+    now_ms = int(time.time() * 1000)
+    con.execute(
+        """
+        INSERT INTO pm_cashflows (
+            position_id, leg_id, venue, account_id, ts, cf_type, amount, currency,
+            description, meta_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            None,
+            None,
+            "hyperliquid",
+            "0xnonmanual",
+            now_ms,
+            "DEPOSIT",
+            999.0,
+            "USDC",
+            "should not appear",
+            json.dumps({"source": "other"}),
+        ),
+    )
+    con.commit()
+    con.close()
+
+    post = client.post(
+        "/api/cashflows/manual",
+        json={
+            "account_id": "0xmanual_only",
+            "venue": "hyperliquid",
+            "cf_type": "DEPOSIT",
+            "amount": 100.0,
+            "currency": "USDC",
+        },
+        headers=_headers(),
+    )
+    assert post.status_code == 201
+    manual_id = post.json()["cashflow_id"]
+
+    get_resp = client.get("/api/cashflows/manual?limit=100", headers=_headers())
+    assert get_resp.status_code == 200
+    items = get_resp.json()["items"]
+    ids = {x["cashflow_id"] for x in items}
+    assert manual_id in ids
+    non_manual_ids = {x["cashflow_id"] for x in items if x["account_id"] == "0xnonmanual"}
+    assert len(non_manual_ids) == 0
+
+    os.unlink(db_path)
+    print("PASS: test_list_manual_cashflows_excludes_non_manual_meta")
+
+
 def test_root_endpoint():
     """GET / returns welcome message (no auth needed)."""
     db_path = _setup_test_db()
@@ -798,6 +923,10 @@ if __name__ == "__main__":
         test_manual_cashflow_deposit,
         test_manual_cashflow_withdraw,
         test_manual_cashflow_validation,
+        test_list_manual_cashflows_requires_auth,
+        test_options_preflight_skips_api_key,
+        test_list_manual_cashflows_after_post,
+        test_list_manual_cashflows_excludes_non_manual_meta,
         test_root_endpoint,
     ]
 

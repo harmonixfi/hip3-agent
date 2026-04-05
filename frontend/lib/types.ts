@@ -211,6 +211,23 @@ export interface ManualCashflowResponse {
   message: string;
 }
 
+/** GET /api/cashflows/manual — manual source rows only */
+export interface ManualCashflowListItem {
+  cashflow_id: number;
+  ts: number;
+  cf_type: string;
+  amount: number;
+  currency: string;
+  venue: string;
+  account_id: string;
+  description: string | null;
+}
+
+export interface ManualCashflowListResponse {
+  items: ManualCashflowListItem[];
+  limit: number;
+}
+
 // ============================================================
 // Vault — /api/vault/*
 // ============================================================

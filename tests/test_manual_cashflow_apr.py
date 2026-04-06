@@ -44,6 +44,10 @@ Test setup (what this file builds)
   each; each leg has the same two timestamps; vault totals are ``2 * leg`` and weights JSON
   ``{"strat_a":50,"strat_b":50}``. Use this to show **per-strategy** APR vs **vault** APR when only
   one leg gets the manual flow.
+- ``_setup_two_strategies_constant_total_realloc_db()``: prior **500 + 500 = 1000**, current **450 +
+  550 = 1000** — vault total unchanged; only redistribution between A and B. Pair with a TRANSFER
+  A→B equal to the snapshot shift so **organic APR is 0** everywhere (no external flow, no net
+  performance).
 
 **Seeded APR columns**
 
@@ -279,6 +283,77 @@ def _setup_two_equal_strategies_db(
     return db_path, ts_y, ts_t, ts_cf
 
 
+def _setup_two_strategies_constant_total_realloc_db() -> tuple[Path, int, int, int]:
+    """Prior A=500 B=500 (1000); current A=450 B=550 (1000). Same timeline as other helpers.
+
+    Interprets as pure reallocation: +50 on B matches −50 on A. Use with TRANSFER 50 from A→B.
+    """
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    db_path = Path(tmp.name)
+    tmp.close()
+
+    now_ms = int(time.time() * 1000)
+    ts_y = now_ms - 2 * DAY_MS
+    ts_t = now_ms - 1 * DAY_MS
+    ts_cf = ts_y + DAY_MS // 2
+    total = 1000.0
+
+    con = sqlite3.connect(str(db_path))
+    con.execute("PRAGMA foreign_keys = ON")
+    con.executescript(SCHEMA_PM.read_text())
+    con.executescript(SCHEMA_VAULT.read_text())
+
+    legs = (("strat_a", "A", 500.0, 450.0), ("strat_b", "B", 500.0, 550.0))
+    for sid, name, eq_y, eq_t in legs:
+        con.execute(
+            """
+            INSERT INTO vault_strategies(
+                strategy_id, name, type, status, wallets_json, target_weight_pct,
+                config_json, created_at_ms, updated_at_ms
+            ) VALUES (?,?,?,?,?,?,?,?,?)
+            """,
+            (sid, name, "DELTA_NEUTRAL", "ACTIVE", None, 50.0, None, now_ms, now_ms),
+        )
+        con.execute(
+            """
+            INSERT INTO vault_strategy_snapshots(
+                strategy_id, ts, equity_usd, apr_since_inception, apr_30d, apr_7d
+            ) VALUES (?,?,?,?,?,?)
+            """,
+            (sid, ts_y, eq_y, 0.0, 0.0, 0.0),
+        )
+        con.execute(
+            """
+            INSERT INTO vault_strategy_snapshots(
+                strategy_id, ts, equity_usd, apr_since_inception, apr_30d, apr_7d
+            ) VALUES (?,?,?,?,?,?)
+            """,
+            (sid, ts_t, eq_t, 0.0, 0.0, 0.0),
+        )
+
+    con.execute(
+        """
+        INSERT INTO vault_snapshots(
+            ts, total_equity_usd, strategy_weights_json, total_apr, apr_30d, apr_7d,
+            net_deposits_alltime
+        ) VALUES (?,?,?,?,?,?,?)
+        """,
+        (ts_y, total, '{"strat_a":50,"strat_b":50}', 0.0, 0.0, 0.0, 0.0),
+    )
+    con.execute(
+        """
+        INSERT INTO vault_snapshots(
+            ts, total_equity_usd, strategy_weights_json, total_apr, apr_30d, apr_7d,
+            net_deposits_alltime
+        ) VALUES (?,?,?,?,?,?,?)
+        """,
+        (ts_t, total, '{"strat_a":45,"strat_b":55}', 0.0, 0.0, 0.0, 0.0),
+    )
+    con.commit()
+    con.close()
+    return db_path, ts_y, ts_t, ts_cf
+
+
 def _run_recalc_from(db_path: Path, since_ms: int) -> None:
     from tracking.vault.recalc import recalc_snapshots
 
@@ -487,6 +562,68 @@ def test_scenario_withdraw_25_reduces_organic_vs_raw_move_single_strategy():
 
         assert apr_s == pytest.approx(want)
         assert apr_v == pytest.approx(want)
+    finally:
+        db_path.unlink(missing_ok=True)
+
+
+def test_scenario_internal_transfer_a_to_b_constant_vault_total_zero_apr():
+    """TRANSFER A→B when snapshots show only a reallocation (vault total unchanged).
+
+    **Story that matches the numbers:** Start $500 + $500 = $1,000. End $450 + $550 = $1,000 — no gain or
+    loss at vault level, only a $50 shift from A to B. Record TRANSFER $50 from A→B in the window.
+
+    **Expected cashflow-adjusted APR:** Organic change for each strategy removes the attributed transfer:
+    - A: (450−500) − (−50) = 0 → APR_A = 0.
+    - B: (550−500) − 50 = 0 → APR_B = 0.
+    - Vault: (1000−1000) − 0 external = 0 → APR_vault = 0.
+
+    This is the scenario for the internal-transfer feature: the transfer explains the snapshot split, not
+    an extra +$100 that would contradict “internal only.”
+    """
+    os.environ["HARMONIX_API_KEY"] = TEST_API_KEY
+    db_path, ts_y, ts_t, ts_cf = _setup_two_strategies_constant_total_realloc_db()
+    os.environ["HARMONIX_DB_PATH"] = str(db_path)
+
+    try:
+        _run_recalc_from(db_path, ts_y)
+
+        _clear_app_settings()
+        from api.main import app
+
+        client = TestClient(app)
+        resp = client.post(
+            "/api/cashflows/manual",
+            json={
+                "cf_type": "TRANSFER",
+                "amount": 50.0,
+                "currency": "USDC",
+                "ts": ts_cf,
+                "from_strategy_id": "strat_a",
+                "to_strategy_id": "strat_b",
+                "description": "internal move",
+            },
+            headers=_headers(),
+        )
+        assert resp.status_code == 201, resp.text
+
+        want_a = expected_apr(500.0, 450.0, -50.0, 1.0)
+        want_b = expected_apr(500.0, 550.0, 50.0, 1.0)
+        want_v = expected_apr(1000.0, 1000.0, 0.0, 1.0)
+        assert want_a == pytest.approx(0.0)
+        assert want_b == pytest.approx(0.0)
+        assert want_v == pytest.approx(0.0)
+
+        con = sqlite3.connect(str(db_path))
+        try:
+            apr_a = _read_strategy_apr(con, "strat_a", ts_t)
+            apr_b = _read_strategy_apr(con, "strat_b", ts_t)
+            apr_v = _read_vault_total_apr(con, ts_t)
+        finally:
+            con.close()
+
+        assert apr_a == pytest.approx(want_a)
+        assert apr_b == pytest.approx(want_b)
+        assert apr_v == pytest.approx(want_v)
     finally:
         db_path.unlink(missing_ok=True)
 

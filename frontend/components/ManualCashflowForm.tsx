@@ -8,15 +8,18 @@ interface Props {
   onSuccess?: () => void;
 }
 
+type FlowKind = "DEPOSIT" | "WITHDRAW" | "TRANSFER";
+
 export default function ManualCashflowForm({ onSuccess }: Props) {
   const [loading, setLoading] = useState(false);
   const [strategies, setStrategies] = useState<StrategySummary[]>([]);
   const [strategiesError, setStrategiesError] = useState<string | null>(null);
+  const [flowKind, setFlowKind] = useState<FlowKind>("DEPOSIT");
   const [result, setResult] = useState<{
     success: boolean;
     message: string;
-    cashflow_id?: number;
     vault_cashflow_id?: number;
+    pm_cashflow_ids?: number[];
   } | null>(null);
 
   useEffect(() => {
@@ -47,12 +50,10 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
     setResult(null);
 
     const form = e.currentTarget;
-    const strategy_id = (form.elements.namedItem("strategy_id") as HTMLSelectElement)
-      .value;
-    const account_id = (form.elements.namedItem("account_id") as HTMLInputElement)
-      .value;
-    const cf_type = (form.elements.namedItem("cf_type") as HTMLSelectElement)
-      .value as "DEPOSIT" | "WITHDRAW";
+    const accountRaw = (
+      form.elements.namedItem("account_id") as HTMLInputElement
+    ).value?.trim();
+    const account_id = accountRaw ? accountRaw : undefined;
     const amount = parseFloat(
       (form.elements.namedItem("amount") as HTMLInputElement).value,
     );
@@ -62,50 +63,80 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
       .value;
     const description = descRaw?.trim() || undefined;
 
-    if (
-      !strategy_id ||
-      !account_id ||
-      !cf_type ||
-      !Number.isFinite(amount) ||
-      amount <= 0
-    ) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       setResult({
         success: false,
-        message: "Strategy, account, type, and a positive amount are required.",
+        message: "A positive amount is required.",
       });
       return;
     }
 
-    if (cf_type !== "DEPOSIT" && cf_type !== "WITHDRAW") {
-      setResult({
-        success: false,
-        message: "Type must be DEPOSIT or WITHDRAW.",
-      });
-      return;
-    }
+    let payload: ManualCashflowRequest;
 
-    const payload: ManualCashflowRequest = {
-      strategy_id,
-      account_id,
-      cf_type,
-      amount,
-      currency,
-      description,
-    };
+    if (flowKind === "TRANSFER") {
+      const from_strategy_id = (
+        form.elements.namedItem("from_strategy_id") as HTMLSelectElement
+      ).value;
+      const to_strategy_id = (
+        form.elements.namedItem("to_strategy_id") as HTMLSelectElement
+      ).value;
+      if (!from_strategy_id || !to_strategy_id) {
+        setResult({
+          success: false,
+          message: "Select both From strategy and To strategy.",
+        });
+        return;
+      }
+      if (from_strategy_id === to_strategy_id) {
+        setResult({
+          success: false,
+          message: "From and To strategy must be different (internal transfer only).",
+        });
+        return;
+      }
+      payload = {
+        from_strategy_id,
+        to_strategy_id,
+        cf_type: "TRANSFER",
+        amount,
+        currency,
+        description,
+        ...(account_id ? { account_id } : {}),
+      };
+    } else {
+      const strategy_id = (form.elements.namedItem("strategy_id") as HTMLSelectElement)
+        .value;
+      if (!strategy_id) {
+        setResult({
+          success: false,
+          message: "Strategy and a positive amount are required.",
+        });
+        return;
+      }
+      payload = {
+        strategy_id,
+        cf_type: flowKind,
+        amount,
+        currency,
+        description,
+        ...(account_id ? { account_id } : {}),
+      };
+    }
 
     setLoading(true);
     try {
       const res = await postManualCashflow(payload);
       setResult({
         success: true,
-        message: `${cf_type} of $${amount.toFixed(2)} recorded successfully.`,
-        cashflow_id: res.cashflow_id,
+        message: `${flowKind} of $${amount.toFixed(2)} recorded successfully.`,
         vault_cashflow_id: res.vault_cashflow_id,
+        pm_cashflow_ids: res.pm_cashflow_ids,
       });
       onSuccess?.();
       form.reset();
       const cur = form.elements.namedItem("currency") as HTMLInputElement;
       if (cur) cur.value = "USDC";
+      setFlowKind("DEPOSIT");
       const strat = form.elements.namedItem("strategy_id") as HTMLSelectElement;
       if (strat && strategies.length > 0) strat.value = strategies[0].strategy_id;
     } catch (err) {
@@ -121,7 +152,7 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
   return (
     <div className="card">
       <div className="text-xs text-gray-500 uppercase tracking-wide mb-4">
-        Manual Deposit / Withdraw
+        Manual Deposit / Withdraw / Internal transfer
       </div>
 
       {strategiesError && (
@@ -137,9 +168,9 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
           }`}
         >
           {result.message}
-          {result.cashflow_id != null && (
+          {result.pm_cashflow_ids != null && result.pm_cashflow_ids.length > 0 && (
             <span className="ml-2 text-xs text-gray-500">
-              PM #{result.cashflow_id}
+              PM {result.pm_cashflow_ids.map((id) => `#${id}`).join(", ")}
               {result.vault_cashflow_id != null && (
                 <> · Vault #{result.vault_cashflow_id}</>
               )}
@@ -152,48 +183,97 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs text-gray-400 mb-1">
-              Account Address
+              Account address (optional)
             </label>
             <input
               name="account_id"
               type="text"
-              required
-              placeholder="0x..."
+              placeholder="0x... — for reference only"
               className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Strategy</label>
+            <label className="block text-xs text-gray-400 mb-1">Flow type</label>
             <select
-              name="strategy_id"
-              required
+              name="flow_kind"
+              value={flowKind}
+              onChange={(e) => setFlowKind(e.target.value as FlowKind)}
               disabled={strategies.length === 0}
               className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-50"
             >
-              {strategies.length === 0 ? (
-                <option value="">No active strategies</option>
-              ) : (
-                strategies.map((s) => (
-                  <option key={s.strategy_id} value={s.strategy_id}>
-                    {s.name} ({s.type})
-                  </option>
-                ))
-              )}
+              <option value="DEPOSIT">Deposit (external)</option>
+              <option value="WITHDRAW">Withdraw (external)</option>
+              <option value="TRANSFER">Transfer between strategies</option>
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Type</label>
-            <select
-              name="cf_type"
-              required
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
-            >
-              <option value="DEPOSIT">Deposit</option>
-              <option value="WITHDRAW">Withdraw</option>
-            </select>
-          </div>
+          {flowKind === "TRANSFER" ? (
+            <>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">
+                  From strategy
+                </label>
+                <select
+                  name="from_strategy_id"
+                  required
+                  disabled={strategies.length < 2}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-50"
+                >
+                  {strategies.length < 2 ? (
+                    <option value="">Need at least two active strategies</option>
+                  ) : (
+                    strategies.map((s) => (
+                      <option key={s.strategy_id} value={s.strategy_id}>
+                        {s.name} ({s.type})
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">
+                  To strategy
+                </label>
+                <select
+                  name="to_strategy_id"
+                  required
+                  disabled={strategies.length < 2}
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-50"
+                >
+                  {strategies.length < 2 ? (
+                    <option value="">Need at least two active strategies</option>
+                  ) : (
+                    strategies.map((s) => (
+                      <option key={`to-${s.strategy_id}`} value={s.strategy_id}>
+                        {s.name} ({s.type})
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+            </>
+          ) : (
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Strategy</label>
+              <select
+                name="strategy_id"
+                required
+                disabled={strategies.length === 0}
+                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-50"
+              >
+                {strategies.length === 0 ? (
+                  <option value="">No active strategies</option>
+                ) : (
+                  strategies.map((s) => (
+                    <option key={s.strategy_id} value={s.strategy_id}>
+                      {s.name} ({s.type})
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs text-gray-400 mb-1">
@@ -222,22 +302,36 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
             />
           </div>
 
-          <div>
+          <div className="md:col-span-2">
             <label className="block text-xs text-gray-400 mb-1">
               Description (optional)
             </label>
             <input
               name="description"
               type="text"
-              placeholder="Deposit from Arbitrum bridge"
+              placeholder={
+                flowKind === "TRANSFER"
+                  ? "Reallocate equity label"
+                  : "Deposit from Arbitrum bridge"
+              }
               className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
             />
           </div>
         </div>
 
+        <p className="text-xs text-gray-500">
+          {flowKind === "TRANSFER"
+            ? "Transfers only re-label equity between strategies (no on-chain move). External deposits/withdrawals use Deposit or Withdraw."
+            : "External capital in or out of the portfolio. Use Transfer for moves between strategies only."}
+        </p>
+
         <button
           type="submit"
-          disabled={loading || strategies.length === 0}
+          disabled={
+            loading ||
+            strategies.length === 0 ||
+            (flowKind === "TRANSFER" && strategies.length < 2)
+          }
           className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm font-medium rounded transition-colors"
         >
           {loading ? "Submitting..." : "Submit"}

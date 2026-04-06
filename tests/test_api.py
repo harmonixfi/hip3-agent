@@ -599,6 +599,7 @@ def test_manual_cashflow_deposit():
     assert data["cashflow_id"] > 0
     assert "vault_cashflow_id" in data
     assert data["vault_cashflow_id"] > 0
+    assert data["pm_cashflow_ids"] == [data["cashflow_id"]]
 
     # Verify pm_cashflows row
     con = sqlite3.connect(str(db_path))
@@ -624,6 +625,40 @@ def test_manual_cashflow_deposit():
 
     os.unlink(db_path)
     print("PASS: test_manual_cashflow_deposit")
+
+
+def test_manual_cashflow_deposit_without_account_id():
+    """POST /api/cashflows/manual accepts missing account_id (stored as empty on pm row)."""
+    db_path = _setup_test_db()
+    client = _get_test_client(db_path)
+
+    body = {
+        "strategy_id": "strat_test_dn",
+        "cf_type": "DEPOSIT",
+        "amount": 100.0,
+        "currency": "USDC",
+    }
+    response = client.post("/api/cashflows/manual", json=body, headers=_headers())
+    assert response.status_code == 201, response.text
+    data = response.json()
+    assert data["pm_cashflow_ids"] == [data["cashflow_id"]]
+
+    con = sqlite3.connect(str(db_path))
+    row = con.execute(
+        "SELECT account_id FROM pm_cashflows WHERE cashflow_id = ?",
+        (data["cashflow_id"],),
+    ).fetchone()
+    con.close()
+    assert row is not None
+    assert row[0] == ""
+
+    get_resp = client.get("/api/cashflows/manual?limit=10", headers=_headers())
+    items = get_resp.json()["items"]
+    match = next(x for x in items if x["cashflow_id"] == data["cashflow_id"])
+    assert match.get("account_id") is None
+
+    os.unlink(db_path)
+    print("PASS: test_manual_cashflow_deposit_without_account_id")
 
 
 def test_manual_cashflow_withdraw():
@@ -655,6 +690,82 @@ def test_manual_cashflow_withdraw():
     print("PASS: test_manual_cashflow_withdraw")
 
 
+def test_manual_cashflow_transfer():
+    """POST /api/cashflows/manual TRANSFER dual-writes vault + two pm rows."""
+    db_path = _setup_test_db()
+    now_ms = int(time.time() * 1000)
+    con = sqlite3.connect(str(db_path))
+    con.execute(
+        """
+        INSERT INTO vault_strategies(
+            strategy_id, name, type, status, wallets_json, target_weight_pct,
+            config_json, created_at_ms, updated_at_ms
+        ) VALUES (?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            "strat_test_b",
+            "Test B",
+            "DELTA_NEUTRAL",
+            "ACTIVE",
+            None,
+            50.0,
+            None,
+            now_ms,
+            now_ms,
+        ),
+    )
+    con.commit()
+    con.close()
+
+    client = _get_test_client(db_path)
+    body = {
+        "account_id": "0xtest123",
+        "cf_type": "TRANSFER",
+        "amount": 123.0,
+        "currency": "USDC",
+        "from_strategy_id": "strat_test_dn",
+        "to_strategy_id": "strat_test_b",
+        "description": "rebalance",
+    }
+    response = client.post("/api/cashflows/manual", json=body, headers=_headers())
+    assert response.status_code == 201, response.text
+    data = response.json()
+    assert len(data["pm_cashflow_ids"]) == 2
+    assert data["pm_cashflow_ids"][0] == data["cashflow_id"]
+    assert data["vault_cashflow_id"] > 0
+
+    con = sqlite3.connect(str(db_path))
+    vr = con.execute(
+        """
+        SELECT cf_type, amount, from_strategy_id, to_strategy_id, strategy_id
+        FROM vault_cashflows WHERE cashflow_id = ?
+        """,
+        (data["vault_cashflow_id"],),
+    ).fetchone()
+    assert vr is not None
+    assert vr[0] == "TRANSFER"
+    assert vr[1] == 123.0
+    assert vr[2] == "strat_test_dn"
+    assert vr[3] == "strat_test_b"
+    assert vr[4] is None
+
+    rows = con.execute(
+        "SELECT cf_type, amount, meta_json FROM pm_cashflows WHERE cashflow_id IN (?, ?)",
+        tuple(data["pm_cashflow_ids"]),
+    ).fetchall()
+    assert len(rows) == 2
+    types = {r[0] for r in rows}
+    assert types == {"WITHDRAW", "DEPOSIT"}
+    metas = [json.loads(r[2]) for r in rows]
+    ids = {m.get("internal_transfer_id") for m in metas}
+    assert len(ids) == 1
+    assert ids.pop() is not None
+    con.close()
+
+    os.unlink(db_path)
+    print("PASS: test_manual_cashflow_transfer")
+
+
 def test_manual_cashflow_validation():
     """POST /api/cashflows/manual rejects invalid input."""
     db_path = _setup_test_db()
@@ -664,11 +775,39 @@ def test_manual_cashflow_validation():
     body = {
         "strategy_id": "strat_test_dn",
         "account_id": "0xtest",
-        "cf_type": "TRANSFER",
+        "cf_type": "BOGUS",
         "amount": 100.0,
     }
     response = client.post("/api/cashflows/manual", json=body, headers=_headers())
     assert response.status_code == 422
+
+    # TRANSFER without from/to
+    response = client.post(
+        "/api/cashflows/manual",
+        json={
+            "account_id": "0xtest",
+            "cf_type": "TRANSFER",
+            "amount": 100.0,
+            "currency": "USDC",
+        },
+        headers=_headers(),
+    )
+    assert response.status_code == 422
+
+    # TRANSFER with from === to
+    response = client.post(
+        "/api/cashflows/manual",
+        json={
+            "account_id": "0xtest",
+            "cf_type": "TRANSFER",
+            "amount": 100.0,
+            "currency": "USDC",
+            "from_strategy_id": "strat_test_dn",
+            "to_strategy_id": "strat_test_dn",
+        },
+        headers=_headers(),
+    )
+    assert response.status_code == 400
 
     # Zero amount
     body["cf_type"] = "DEPOSIT"
@@ -1062,7 +1201,9 @@ if __name__ == "__main__":
         test_position_fills_pagination,
         test_closed_positions,
         test_manual_cashflow_deposit,
+        test_manual_cashflow_deposit_without_account_id,
         test_manual_cashflow_withdraw,
+        test_manual_cashflow_transfer,
         test_manual_cashflow_validation,
         test_manual_cashflow_rejects_paused_strategy,
         test_list_manual_cashflows_legacy_venue_without_strategy_in_meta,

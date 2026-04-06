@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ============================================================
@@ -198,13 +198,25 @@ class ClosedPositionAnalysis(BaseModel):
 # ============================================================
 
 class ManualCashflowRequest(BaseModel):
-    strategy_id: str
-    account_id: str
-    cf_type: str = Field(..., pattern=r"^(DEPOSIT|WITHDRAW)$")
+    account_id: Optional[str] = None
+    cf_type: str = Field(..., pattern=r"^(DEPOSIT|WITHDRAW|TRANSFER)$")
     amount: float = Field(..., gt=0)
     currency: str = "USDC"
     ts: Optional[int] = None  # epoch ms, defaults to now
     description: Optional[str] = None
+    strategy_id: Optional[str] = None
+    from_strategy_id: Optional[str] = None
+    to_strategy_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> "ManualCashflowRequest":
+        if self.cf_type == "TRANSFER":
+            if not self.from_strategy_id or not self.to_strategy_id:
+                raise ValueError("TRANSFER requires from_strategy_id and to_strategy_id")
+        else:
+            if not self.strategy_id:
+                raise ValueError("DEPOSIT and WITHDRAW require strategy_id")
+        return self
 
 
 class ManualCashflowResponse(BaseModel):
@@ -212,7 +224,7 @@ class ManualCashflowResponse(BaseModel):
 
     cashflow_id: int = Field(
         ...,
-        description="pm_cashflows.cashflow_id (portfolio / APR tooling).",
+        description="First pm_cashflows.cashflow_id (same as pm_cashflow_ids[0]).",
     )
     vault_cashflow_id: int = Field(
         ...,
@@ -221,6 +233,10 @@ class ManualCashflowResponse(BaseModel):
     message: str = Field(
         ...,
         description="Human-readable confirmation (e.g. cf_type, amount, currency).",
+    )
+    pm_cashflow_ids: list[int] = Field(
+        ...,
+        description="Portfolio row ids: one for DEPOSIT/WITHDRAW, two for TRANSFER.",
     )
 
 
@@ -234,8 +250,9 @@ class ManualCashflowListItem(BaseModel):
     currency: str
     strategy_id: Optional[str] = None
     venue: Optional[str] = None  # legacy rows only; new dual-write rows omit venue
-    account_id: str
+    account_id: Optional[str] = None  # empty when omitted on POST (pm_cashflows stores "")
     description: Optional[str] = None
+    internal_transfer_id: Optional[str] = None
 
 
 class ManualCashflowListResponse(BaseModel):

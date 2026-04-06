@@ -6,6 +6,7 @@ import logging
 import sqlite3
 
 from .apr import cashflow_adjusted_apr
+from .snapshot import net_cashflow_adjustments_strategy
 
 log = logging.getLogger(__name__)
 
@@ -44,15 +45,9 @@ def _recompute_strategy_apr(
     if period_days <= 0:
         return 0.0
 
-    cf_row = con.execute(
-        """
-        SELECT COALESCE(SUM(amount), 0) FROM vault_cashflows
-        WHERE cf_type IN ('DEPOSIT', 'WITHDRAW') AND strategy_id = ?
-          AND ts >= ? AND ts <= ?
-        """,
-        (strategy_id, prior_ts, snapshot_ts),
-    ).fetchone()
-    net_cashflows = float(cf_row[0]) if cf_row and cf_row[0] is not None else 0.0
+    net_cashflows = net_cashflow_adjustments_strategy(
+        con, strategy_id, prior_ts, snapshot_ts
+    )
 
     return cashflow_adjusted_apr(current_equity, prior_equity, net_cashflows, period_days)
 

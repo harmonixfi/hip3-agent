@@ -108,9 +108,9 @@ export default function ManualCashflowsTable({ refreshKey }: Props) {
                   </td>
                   <td
                     className="px-3 py-2 text-gray-400 font-mono text-xs max-w-[9rem] truncate"
-                    title={r.account_id}
+                    title={r.account_id ?? undefined}
                   >
-                    {truncateMiddle(r.account_id)}
+                    {r.account_id ? truncateMiddle(r.account_id) : "—"}
                   </td>
                   <td className="px-3 py-2 text-gray-500 max-w-[12rem] truncate">
                     {r.description ?? "—"}

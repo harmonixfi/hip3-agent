@@ -19,6 +19,7 @@ SCHEMA_VAULT = ROOT / "tracking" / "sql" / "schema_vault.sql"
 from tracking.vault.manual_dual_write import (  # noqa: E402
     ManualDualWriteError,
     insert_manual_deposit_withdraw_dual,
+    insert_manual_transfer_dual,
     require_active_strategy,
 )
 
@@ -30,6 +31,19 @@ def _memory_db() -> sqlite3.Connection:
     con.executescript(SCHEMA_PM.read_text())
     con.executescript(SCHEMA_VAULT.read_text())
     return con
+
+
+def _seed_two_active(con: sqlite3.Connection, now_ms: int) -> None:
+    for sid, name in (("s_a", "A"), ("s_b", "B")):
+        con.execute(
+            """
+            INSERT INTO vault_strategies(
+                strategy_id, name, type, status, wallets_json, target_weight_pct,
+                config_json, created_at_ms, updated_at_ms
+            ) VALUES (?,?,?,?,?,?,?,?,?)
+            """,
+            (sid, name, "DELTA_NEUTRAL", "ACTIVE", None, 50.0, None, now_ms, now_ms),
+        )
 
 
 def _seed_strategies(con: sqlite3.Connection, now_ms: int) -> None:
@@ -200,3 +214,54 @@ def test_insert_dual_both_rows_rolled_back_without_commit():
     n_pm = con.execute("SELECT COUNT(*) FROM pm_cashflows").fetchone()[0]
     assert n_vault == 0
     assert n_pm == 0
+
+
+def test_insert_manual_transfer_dual_vault_and_pm_shape():
+    con = _memory_db()
+    now_ms = int(time.time() * 1000)
+    _seed_two_active(con, now_ms)
+    ts = now_ms - 120_000
+
+    v_id, pm_w, pm_d = insert_manual_transfer_dual(
+        con,
+        from_strategy_id="s_a",
+        to_strategy_id="s_b",
+        account_id="0xfer",
+        amount=75.0,
+        currency="USDC",
+        ts=ts,
+        description="xfer",
+        now_ms=now_ms,
+    )
+    con.commit()
+
+    assert v_id > 0 and pm_w > 0 and pm_d > 0 and pm_w != pm_d
+
+    vr = con.execute(
+        """
+        SELECT cf_type, amount, from_strategy_id, to_strategy_id, strategy_id
+        FROM vault_cashflows WHERE cashflow_id = ?
+        """,
+        (v_id,),
+    ).fetchone()
+    assert vr["cf_type"] == "TRANSFER"
+    assert float(vr["amount"]) == 75.0
+    assert vr["from_strategy_id"] == "s_a"
+    assert vr["to_strategy_id"] == "s_b"
+    assert vr["strategy_id"] is None
+
+    wr = con.execute(
+        "SELECT cf_type, amount, meta_json FROM pm_cashflows WHERE cashflow_id = ?",
+        (pm_w,),
+    ).fetchone()
+    dr = con.execute(
+        "SELECT cf_type, amount, meta_json FROM pm_cashflows WHERE cashflow_id = ?",
+        (pm_d,),
+    ).fetchone()
+    assert wr["cf_type"] == "WITHDRAW" and float(wr["amount"]) == -75.0
+    assert dr["cf_type"] == "DEPOSIT" and float(dr["amount"]) == 75.0
+    mw = json.loads(wr["meta_json"])
+    md = json.loads(dr["meta_json"])
+    assert mw["internal_transfer_id"] == md["internal_transfer_id"]
+    assert mw["strategy_id"] == "s_a"
+    assert md["strategy_id"] == "s_b"

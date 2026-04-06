@@ -14,13 +14,17 @@ from .providers import PROVIDER_REGISTRY
 log = logging.getLogger(__name__)
 
 
-def _net_external_cashflows_strategy(
+def net_cashflow_adjustments_strategy(
     con: sqlite3.Connection,
     strategy_id: str,
     start_ts: int,
     end_ts: int,
 ) -> float:
-    """DEPOSIT + WITHDRAW amounts for strategy_id (WITHDRAW stored negative)."""
+    """Cashflow adjustments for APR: DEPOSIT/WITHDRAW on ``strategy_id`` plus TRANSFER legs.
+
+    TRANSFER: ``from`` contributes ``-amount``, ``to`` contributes ``+amount`` (``amount`` > 0 in DB).
+    Vault-level external net intentionally excludes TRANSFER rows — use only DEPOSIT/WITHDRAW there.
+    """
     row = con.execute(
         """
         SELECT COALESCE(SUM(amount), 0) FROM vault_cashflows
@@ -29,7 +33,22 @@ def _net_external_cashflows_strategy(
         """,
         (strategy_id, start_ts, end_ts),
     ).fetchone()
-    return float(row[0]) if row and row[0] is not None else 0.0
+    ext = float(row[0]) if row and row[0] is not None else 0.0
+
+    tr = con.execute(
+        """
+        SELECT COALESCE(SUM(
+          CASE WHEN from_strategy_id = ? THEN -amount
+               WHEN to_strategy_id = ? THEN amount
+               ELSE 0 END
+        ), 0) FROM vault_cashflows
+        WHERE cf_type = 'TRANSFER' AND ts >= ? AND ts <= ?
+          AND (from_strategy_id = ? OR to_strategy_id = ?)
+        """,
+        (strategy_id, strategy_id, start_ts, end_ts, strategy_id, strategy_id),
+    ).fetchone()
+    xfer = float(tr[0]) if tr and tr[0] is not None else 0.0
+    return ext + xfer
 
 
 def _compute_apr_for_strategy(
@@ -67,7 +86,7 @@ def _compute_apr_for_strategy(
     if period_days <= 0:
         return 0.0
 
-    net_cashflows = _net_external_cashflows_strategy(con, strategy_id, prior_ts, now_ms)
+    net_cashflows = net_cashflow_adjustments_strategy(con, strategy_id, prior_ts, now_ms)
     return cashflow_adjusted_apr(current_equity, prior_equity, net_cashflows, period_days)
 
 

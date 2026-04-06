@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS pm_cashflows (
   cashflow_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   position_id TEXT,           -- NULL for non-position cashflows (e.g., deposit/withdraw)
   leg_id TEXT,
-  venue TEXT NOT NULL,
+  venue TEXT,                 -- NULL allowed (e.g. strategy-scoped manual dual-write)
   account_id TEXT NOT NULL,
   ts INTEGER NOT NULL,        -- epoch ms UTC
   cf_type TEXT NOT NULL CHECK (cf_type IN ('REALIZED_PNL', 'FEE', 'FUNDING', 'TRANSFER', 'DEPOSIT', 'WITHDRAW', 'OTHER')),

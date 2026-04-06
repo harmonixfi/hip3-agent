@@ -196,19 +196,33 @@ export interface HealthStatus {
 // Manual Cashflow — POST /api/cashflows/manual
 // ============================================================
 
-export interface ManualCashflowRequest {
-  account_id: string;
-  venue: string;
-  cf_type: "DEPOSIT" | "WITHDRAW";
-  amount: number;
-  currency: string;
-  ts?: number;
-  description?: string;
-}
+/** POST /api/cashflows/manual — deposit/withdraw (single strategy) or internal transfer */
+export type ManualCashflowRequest =
+  | {
+      strategy_id: string;
+      account_id?: string;
+      cf_type: "DEPOSIT" | "WITHDRAW";
+      amount: number;
+      currency: string;
+      ts?: number;
+      description?: string;
+    }
+  | {
+      from_strategy_id: string;
+      to_strategy_id: string;
+      account_id?: string;
+      cf_type: "TRANSFER";
+      amount: number;
+      currency: string;
+      ts?: number;
+      description?: string;
+    };
 
 export interface ManualCashflowResponse {
   cashflow_id: number;
+  vault_cashflow_id: number;
   message: string;
+  pm_cashflow_ids: number[];
 }
 
 /** GET /api/cashflows/manual — manual source rows only */
@@ -218,9 +232,11 @@ export interface ManualCashflowListItem {
   cf_type: string;
   amount: number;
   currency: string;
-  venue: string;
-  account_id: string;
+  strategy_id: string | null;
+  venue: string | null;
+  account_id: string | null;
   description: string | null;
+  internal_transfer_id?: string | null;
 }
 
 export interface ManualCashflowListResponse {

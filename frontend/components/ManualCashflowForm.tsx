@@ -1,17 +1,85 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { submitManualCashflow, type ActionResult } from "@/app/settings/actions";
+import { useState } from "react";
+import { postManualCashflow } from "@/lib/api";
+import type { ManualCashflowRequest } from "@/lib/types";
 
-export default function ManualCashflowForm() {
-  const [isPending, startTransition] = useTransition();
-  const [result, setResult] = useState<ActionResult | null>(null);
+interface Props {
+  onSuccess?: () => void;
+}
 
-  function handleSubmit(formData: FormData) {
-    startTransition(async () => {
-      const res = await submitManualCashflow(formData);
-      setResult(res);
-    });
+export default function ManualCashflowForm({ onSuccess }: Props) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{
+    success: boolean;
+    message: string;
+    cashflow_id?: number;
+  } | null>(null);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setResult(null);
+
+    const form = e.currentTarget;
+    const account_id = (form.elements.namedItem("account_id") as HTMLInputElement)
+      .value;
+    const venue = (form.elements.namedItem("venue") as HTMLSelectElement).value;
+    const cf_type = (form.elements.namedItem("cf_type") as HTMLSelectElement)
+      .value as "DEPOSIT" | "WITHDRAW";
+    const amount = parseFloat(
+      (form.elements.namedItem("amount") as HTMLInputElement).value,
+    );
+    const currency =
+      (form.elements.namedItem("currency") as HTMLInputElement).value || "USDC";
+    const descRaw = (form.elements.namedItem("description") as HTMLInputElement)
+      .value;
+    const description = descRaw?.trim() || undefined;
+
+    if (!account_id || !venue || !cf_type || !Number.isFinite(amount) || amount <= 0) {
+      setResult({
+        success: false,
+        message: "All fields are required and amount must be positive.",
+      });
+      return;
+    }
+
+    if (cf_type !== "DEPOSIT" && cf_type !== "WITHDRAW") {
+      setResult({
+        success: false,
+        message: "Type must be DEPOSIT or WITHDRAW.",
+      });
+      return;
+    }
+
+    const payload: ManualCashflowRequest = {
+      account_id,
+      venue,
+      cf_type,
+      amount,
+      currency,
+      description,
+    };
+
+    setLoading(true);
+    try {
+      const res = await postManualCashflow(payload);
+      setResult({
+        success: true,
+        message: `${cf_type} of $${amount.toFixed(2)} recorded successfully.`,
+        cashflow_id: res.cashflow_id,
+      });
+      onSuccess?.();
+      form.reset();
+      const cur = form.elements.namedItem("currency") as HTMLInputElement;
+      if (cur) cur.value = "USDC";
+    } catch (err) {
+      setResult({
+        success: false,
+        message: err instanceof Error ? err.message : "Failed to submit cashflow.",
+      });
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -37,9 +105,8 @@ export default function ManualCashflowForm() {
         </div>
       )}
 
-      <form action={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Account ID */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">
               Account Address
@@ -53,7 +120,6 @@ export default function ManualCashflowForm() {
             />
           </div>
 
-          {/* Venue */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">Venue</label>
             <select
@@ -66,7 +132,6 @@ export default function ManualCashflowForm() {
             </select>
           </div>
 
-          {/* Type */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">Type</label>
             <select
@@ -79,7 +144,6 @@ export default function ManualCashflowForm() {
             </select>
           </div>
 
-          {/* Amount */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">
               Amount (positive)
@@ -95,7 +159,6 @@ export default function ManualCashflowForm() {
             />
           </div>
 
-          {/* Currency */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">
               Currency
@@ -108,7 +171,6 @@ export default function ManualCashflowForm() {
             />
           </div>
 
-          {/* Description */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">
               Description (optional)
@@ -124,10 +186,10 @@ export default function ManualCashflowForm() {
 
         <button
           type="submit"
-          disabled={isPending}
+          disabled={loading}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm font-medium rounded transition-colors"
         >
-          {isPending ? "Submitting..." : "Submit"}
+          {loading ? "Submitting..." : "Submit"}
         </button>
       </form>
     </div>

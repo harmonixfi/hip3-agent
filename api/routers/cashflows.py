@@ -10,13 +10,59 @@ import json
 import sqlite3
 import time
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Query
 
-from api.deps import get_db_writable
-from api.models.schemas import ManualCashflowRequest, ManualCashflowResponse
+from api.deps import get_db, get_db_writable
+from api.models.schemas import (
+    ManualCashflowListItem,
+    ManualCashflowListResponse,
+    ManualCashflowRequest,
+    ManualCashflowResponse,
+)
 
 router = APIRouter(prefix="/api/cashflows", tags=["cashflows"])
+
+
+@router.get("/manual", response_model=ManualCashflowListResponse)
+def list_manual_cashflows(
+    limit: int = Query(50, description="Clamped to [1, 100]."),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """List manual DEPOSIT/WITHDRAW rows (meta_json source=manual), newest first."""
+    lim = max(1, min(limit, 100))
+    cur = db.execute(
+        """
+        SELECT
+          cashflow_id,
+          ts,
+          cf_type,
+          amount,
+          currency,
+          venue,
+          account_id,
+          description
+        FROM pm_cashflows
+        WHERE cf_type IN ('DEPOSIT', 'WITHDRAW')
+          AND json_extract(meta_json, '$.source') = 'manual'
+        ORDER BY ts DESC
+        LIMIT ?
+        """,
+        (lim,),
+    )
+    items = [
+        ManualCashflowListItem(
+            cashflow_id=row["cashflow_id"],
+            ts=row["ts"],
+            cf_type=row["cf_type"],
+            amount=row["amount"],
+            currency=row["currency"],
+            venue=row["venue"],
+            account_id=row["account_id"],
+            description=row["description"],
+        )
+        for row in cur.fetchall()
+    ]
+    return ManualCashflowListResponse(items=items, limit=lim)
 
 
 @router.post("/manual", response_model=ManualCashflowResponse, status_code=201)

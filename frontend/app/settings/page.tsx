@@ -1,6 +1,6 @@
 import { getHealth } from "@/lib/api";
 import { formatRelative } from "@/lib/format";
-import ManualCashflowForm from "@/components/ManualCashflowForm";
+import SettingsManualCashflowSection from "@/components/SettingsManualCashflowSection";
 
 export const revalidate = 60;
 
@@ -18,8 +18,8 @@ export default async function SettingsPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-white">Settings</h1>
 
-      {/* Manual cashflow form */}
-      <ManualCashflowForm />
+      {/* Manual deposit/withdraw + history */}
+      <SettingsManualCashflowSection />
 
       {/* System info */}
       <div className="card">

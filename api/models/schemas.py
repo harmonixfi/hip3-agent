@@ -217,6 +217,24 @@ class ManualCashflowResponse(BaseModel):
     )
 
 
+class ManualCashflowListItem(BaseModel):
+    """One row from GET /api/cashflows/manual (manual source only)."""
+
+    cashflow_id: int
+    ts: int  # epoch ms UTC
+    cf_type: str
+    amount: float
+    currency: str
+    venue: str
+    account_id: str
+    description: Optional[str] = None
+
+
+class ManualCashflowListResponse(BaseModel):
+    items: list[ManualCashflowListItem]
+    limit: int
+
+
 # ============================================================
 # Health
 # ============================================================

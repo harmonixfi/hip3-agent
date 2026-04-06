@@ -23,6 +23,8 @@ class Settings(BaseModel):
     cors_origins: list[str] = [
         "http://localhost:3000",           # local Next.js dev
         "https://localhost:3000",
+        "http://127.0.0.1:3000",           # same as localhost; distinct Origin for CORS
+        "https://127.0.0.1:3000",
     ]
     # Additional Vercel domains added via HARMONIX_CORS_ORIGINS env var
     # Format: comma-separated URLs

@@ -1,16 +1,14 @@
 """Manual cashflow endpoint.
 
-POST /api/cashflows/manual — record deposit/withdraw events.
-Per ADR-010: manual entry via REST API for accurate cashflow-adjusted APR.
+POST /api/cashflows/manual — record deposit/withdraw events (strategy-scoped dual-write).
 """
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import time
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import get_db, get_db_writable
 from api.models.schemas import (
@@ -18,6 +16,11 @@ from api.models.schemas import (
     ManualCashflowListResponse,
     ManualCashflowRequest,
     ManualCashflowResponse,
+)
+from tracking.vault.manual_dual_write import (
+    ManualDualWriteError,
+    insert_manual_deposit_withdraw_dual,
+    require_active_strategy,
 )
 
 router = APIRouter(prefix="/api/cashflows", tags=["cashflows"])
@@ -39,6 +42,7 @@ def list_manual_cashflows(
           amount,
           currency,
           venue,
+          json_extract(meta_json, '$.strategy_id') AS strategy_id,
           account_id,
           description
         FROM pm_cashflows
@@ -56,6 +60,7 @@ def list_manual_cashflows(
             cf_type=row["cf_type"],
             amount=row["amount"],
             currency=row["currency"],
+            strategy_id=row["strategy_id"],
             venue=row["venue"],
             account_id=row["account_id"],
             description=row["description"],
@@ -72,39 +77,51 @@ def record_manual_cashflow(
 ):
     """Record a manual deposit or withdrawal.
 
-    Writes to pm_cashflows with meta_json {"source": "manual"}.
-    Amount sign is determined by cf_type: DEPOSIT = positive, WITHDRAW = negative.
+    Dual-writes vault_cashflows (strategy) and pm_cashflows (portfolio) in one transaction.
+    Amount sign: DEPOSIT = positive, WITHDRAW = negative.
     """
     ts = body.ts or int(time.time() * 1000)
+    now_ms = int(time.time() * 1000)
 
-    # Sign convention: DEPOSIT = +amount, WITHDRAW = -amount
-    signed_amount = body.amount if body.cf_type == "DEPOSIT" else -body.amount
+    try:
+        require_active_strategy(db, body.strategy_id)
+    except ManualDualWriteError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
-    meta = json.dumps({"source": "manual"})
+    try:
+        vault_id, pm_id = insert_manual_deposit_withdraw_dual(
+            db,
+            strategy_id=body.strategy_id,
+            account_id=body.account_id,
+            cf_type=body.cf_type,
+            amount=body.amount,
+            currency=body.currency,
+            ts=ts,
+            description=body.description,
+            now_ms=now_ms,
+        )
+    except sqlite3.IntegrityError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid cashflow data: {e}") from e
 
-    cursor = db.execute(
-        """
-        INSERT INTO pm_cashflows (
-            position_id, leg_id, venue, account_id,
-            ts, cf_type, amount, currency, description, meta_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            None,           # no position_id for deposits/withdrawals
-            None,           # no leg_id
-            body.venue,
-            body.account_id,
-            ts,
-            body.cf_type,
-            signed_amount,
-            body.currency,
-            body.description,
-            meta,
-        ),
-    )
     db.commit()
 
+    recalculated = False
+    recalc_count = 0
+    latest_snap_ts = db.execute(
+        "SELECT MAX(ts) FROM vault_strategy_snapshots"
+    ).fetchone()[0]
+    if latest_snap_ts and ts < latest_snap_ts:
+        from tracking.vault.recalc import recalc_snapshots
+
+        recalc_count = recalc_snapshots(db, ts)
+        recalculated = True
+
+    msg = f"{body.cf_type} of {body.amount} {body.currency} recorded"
+    if recalculated:
+        msg += f" ({recalc_count} snapshots recalculated)"
+
     return ManualCashflowResponse(
-        cashflow_id=cursor.lastrowid,
-        message=f"{body.cf_type} of {body.amount} {body.currency} recorded",
+        cashflow_id=pm_id,
+        vault_cashflow_id=vault_id,
+        message=msg,
     )

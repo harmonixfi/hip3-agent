@@ -323,6 +323,33 @@ Send behavior after run:
 - if one section hard-fails, still send the remaining sections and name the failed section in the header
 - if Bean asks about a specific rotation, rerun with `--rotate-from ... --rotate-to ...` and include the populated `Rotation Cost Analysis`
 
+### Local backend + frontend (dashboard)
+
+Run from the **repo root** with `.venv` and `source .arbit_env` (same as other Python commands).
+
+**Backend (BE)** — FastAPI + uvicorn on port **8000**:
+
+```bash
+source .arbit_env
+.venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+**Frontend (FE)** — Next.js (default **3000**), in a **second** terminal:
+
+```bash
+cd frontend
+# One-time: copy env and point at local API (API_KEY must match HARMONIX_API_KEY in .arbit_env)
+# cp .env.local.example .env.local  → set API_BASE_URL=http://127.0.0.1:8000 and API_KEY=…
+npm install
+npm run dev
+```
+
+`package.json` declares **Yarn** as the package manager; `yarn install` / `yarn dev` is equivalent if you use Yarn.
+
+The app proxies browser calls via `frontend/app/api/harmonix/...` using **`API_BASE_URL`** and **`API_KEY`** (see `frontend/.env.local.example`). No `NEXT_PUBLIC_*` keys are required for that path.
+
+**Production-style FE** (after `npm run build`): `npm run start` (same `API_BASE_URL` / `API_KEY` rules).
+
 ---
 
 ## 6) Out of scope

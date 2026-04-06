@@ -198,8 +198,8 @@ class ClosedPositionAnalysis(BaseModel):
 # ============================================================
 
 class ManualCashflowRequest(BaseModel):
+    strategy_id: str
     account_id: str
-    venue: str
     cf_type: str = Field(..., pattern=r"^(DEPOSIT|WITHDRAW)$")
     amount: float = Field(..., gt=0)
     currency: str = "USDC"
@@ -210,7 +210,14 @@ class ManualCashflowRequest(BaseModel):
 class ManualCashflowResponse(BaseModel):
     """Returned after POST /api/cashflows/manual. `message` is always set by the handler."""
 
-    cashflow_id: int
+    cashflow_id: int = Field(
+        ...,
+        description="pm_cashflows.cashflow_id (portfolio / APR tooling).",
+    )
+    vault_cashflow_id: int = Field(
+        ...,
+        description="vault_cashflows.cashflow_id (strategy attribution).",
+    )
     message: str = Field(
         ...,
         description="Human-readable confirmation (e.g. cf_type, amount, currency).",
@@ -225,7 +232,8 @@ class ManualCashflowListItem(BaseModel):
     cf_type: str
     amount: float
     currency: str
-    venue: str
+    strategy_id: Optional[str] = None
+    venue: Optional[str] = None  # legacy rows only; new dual-write rows omit venue
     account_id: str
     description: Optional[str] = None
 

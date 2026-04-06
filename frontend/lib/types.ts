@@ -197,8 +197,8 @@ export interface HealthStatus {
 // ============================================================
 
 export interface ManualCashflowRequest {
+  strategy_id: string;
   account_id: string;
-  venue: string;
   cf_type: "DEPOSIT" | "WITHDRAW";
   amount: number;
   currency: string;
@@ -208,6 +208,7 @@ export interface ManualCashflowRequest {
 
 export interface ManualCashflowResponse {
   cashflow_id: number;
+  vault_cashflow_id: number;
   message: string;
 }
 
@@ -218,7 +219,8 @@ export interface ManualCashflowListItem {
   cf_type: string;
   amount: number;
   currency: string;
-  venue: string;
+  strategy_id: string | null;
+  venue: string | null;
   account_id: string;
   description: string | null;
 }

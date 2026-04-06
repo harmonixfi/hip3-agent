@@ -76,6 +76,7 @@ export default function ManualCashflowsTable({ refreshKey }: Props) {
                 <th className="px-3 py-2 text-left">Type</th>
                 <th className="px-3 py-2 text-right">Amount</th>
                 <th className="px-3 py-2 text-left">Currency</th>
+                <th className="px-3 py-2 text-left">Strategy</th>
                 <th className="px-3 py-2 text-left">Venue</th>
                 <th className="px-3 py-2 text-left">Account</th>
                 <th className="px-3 py-2 text-left max-w-[12rem]">Description</th>
@@ -96,7 +97,15 @@ export default function ManualCashflowsTable({ refreshKey }: Props) {
                     })}
                   </td>
                   <td className="px-3 py-2 text-gray-400">{r.currency}</td>
-                  <td className="px-3 py-2 text-gray-400">{r.venue}</td>
+                  <td
+                    className="px-3 py-2 text-gray-300 font-mono text-xs max-w-[10rem] truncate"
+                    title={r.strategy_id ?? undefined}
+                  >
+                    {r.strategy_id ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-gray-500 text-xs">
+                    {r.venue ?? "—"}
+                  </td>
                   <td
                     className="px-3 py-2 text-gray-400 font-mono text-xs max-w-[9rem] truncate"
                     title={r.account_id}

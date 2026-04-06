@@ -56,7 +56,33 @@ def _setup_test_db() -> Path:
     if schema_mon.exists():
         con.executescript(schema_mon.read_text())
 
+    # Vault schema (manual cashflow dual-write validates strategy_id)
+    schema_vault = ROOT / "tracking" / "sql" / "schema_vault.sql"
+    if schema_vault.exists():
+        con.executescript(schema_vault.read_text())
+
     now_ms = int(time.time() * 1000)
+
+    # One ACTIVE strategy for POST /api/cashflows/manual tests
+    con.execute(
+        """
+        INSERT INTO vault_strategies(
+            strategy_id, name, type, status, wallets_json, target_weight_pct,
+            config_json, created_at_ms, updated_at_ms
+        ) VALUES (?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            "strat_test_dn",
+            "Test Delta Neutral",
+            "DELTA_NEUTRAL",
+            "ACTIVE",
+            None,
+            100.0,
+            None,
+            now_ms,
+            now_ms,
+        ),
+    )
     day_ago_ms = now_ms - 86400 * 1000
 
     # Insert test position
@@ -559,8 +585,8 @@ def test_manual_cashflow_deposit():
     client = _get_test_client(db_path)
 
     body = {
+        "strategy_id": "strat_test_dn",
         "account_id": "0xtest123",
-        "venue": "hyperliquid",
         "cf_type": "DEPOSIT",
         "amount": 5000.0,
         "currency": "USDC",
@@ -571,8 +597,10 @@ def test_manual_cashflow_deposit():
     data = response.json()
     assert "cashflow_id" in data
     assert data["cashflow_id"] > 0
+    assert "vault_cashflow_id" in data
+    assert data["vault_cashflow_id"] > 0
 
-    # Verify it was stored with positive amount
+    # Verify pm_cashflows row
     con = sqlite3.connect(str(db_path))
     row = con.execute(
         "SELECT amount, cf_type, meta_json FROM pm_cashflows WHERE cashflow_id = ?",
@@ -583,6 +611,15 @@ def test_manual_cashflow_deposit():
     assert row[1] == "DEPOSIT"
     meta = json.loads(row[2])
     assert meta["source"] == "manual"
+    assert meta["strategy_id"] == "strat_test_dn"
+
+    vrow = con.execute(
+        "SELECT amount, strategy_id FROM vault_cashflows WHERE cashflow_id = ?",
+        (data["vault_cashflow_id"],),
+    ).fetchone()
+    assert vrow is not None
+    assert vrow[0] == 5000.0
+    assert vrow[1] == "strat_test_dn"
     con.close()
 
     os.unlink(db_path)
@@ -595,8 +632,8 @@ def test_manual_cashflow_withdraw():
     client = _get_test_client(db_path)
 
     body = {
+        "strategy_id": "strat_test_dn",
         "account_id": "0xtest123",
-        "venue": "hyperliquid",
         "cf_type": "WITHDRAW",
         "amount": 2000.0,
         "currency": "USDC",
@@ -625,8 +662,8 @@ def test_manual_cashflow_validation():
 
     # Invalid cf_type
     body = {
+        "strategy_id": "strat_test_dn",
         "account_id": "0xtest",
-        "venue": "hyperliquid",
         "cf_type": "TRANSFER",
         "amount": 100.0,
     }
@@ -644,8 +681,111 @@ def test_manual_cashflow_validation():
     response = client.post("/api/cashflows/manual", json=body, headers=_headers())
     assert response.status_code == 422
 
+    # Unknown strategy_id
+    response = client.post(
+        "/api/cashflows/manual",
+        json={
+            "strategy_id": "no_such_strategy",
+            "account_id": "0xtest",
+            "cf_type": "DEPOSIT",
+            "amount": 100.0,
+            "currency": "USDC",
+        },
+        headers=_headers(),
+    )
+    assert response.status_code == 400
+
     os.unlink(db_path)
     print("PASS: test_manual_cashflow_validation")
+
+
+def test_manual_cashflow_rejects_paused_strategy():
+    """POST /api/cashflows/manual returns 400 when strategy is not ACTIVE."""
+    db_path = _setup_test_db()
+    now_ms = int(time.time() * 1000)
+    con = sqlite3.connect(str(db_path))
+    con.execute(
+        """
+        INSERT INTO vault_strategies(
+            strategy_id, name, type, status, wallets_json, target_weight_pct,
+            config_json, created_at_ms, updated_at_ms
+        ) VALUES (?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            "strat_paused",
+            "Paused Strat",
+            "LENDING",
+            "PAUSED",
+            None,
+            0.0,
+            None,
+            now_ms,
+            now_ms,
+        ),
+    )
+    con.commit()
+    con.close()
+
+    client = _get_test_client(db_path)
+    response = client.post(
+        "/api/cashflows/manual",
+        json={
+            "strategy_id": "strat_paused",
+            "account_id": "0xtest",
+            "cf_type": "DEPOSIT",
+            "amount": 100.0,
+            "currency": "USDC",
+        },
+        headers=_headers(),
+    )
+    assert response.status_code == 400
+    os.unlink(db_path)
+    print("PASS: test_manual_cashflow_rejects_paused_strategy")
+
+
+def test_list_manual_cashflows_legacy_venue_without_strategy_in_meta():
+    """Legacy manual rows (venue set, meta without strategy_id) still list correctly."""
+    db_path = _setup_test_db()
+    client = _get_test_client(db_path)
+
+    con = sqlite3.connect(str(db_path))
+    now_ms = int(time.time() * 1000)
+    con.execute(
+        """
+        INSERT INTO pm_cashflows (
+            position_id, leg_id, venue, account_id, ts, cf_type, amount, currency,
+            description, meta_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            None,
+            None,
+            "hyperliquid",
+            "0xlegacy_manual",
+            now_ms,
+            "DEPOSIT",
+            42.0,
+            "USDC",
+            "pre-dual-write",
+            json.dumps({"source": "manual"}),
+        ),
+    )
+    con.commit()
+    con.close()
+
+    get_resp = client.get("/api/cashflows/manual?limit=50", headers=_headers())
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    legacy = next(
+        (x for x in data["items"] if x["account_id"] == "0xlegacy_manual"),
+        None,
+    )
+    assert legacy is not None
+    assert legacy["venue"] == "hyperliquid"
+    assert legacy.get("strategy_id") is None
+
+    os.unlink(db_path)
+    print("PASS: test_list_manual_cashflows_legacy_venue_without_strategy_in_meta")
 
 
 def test_list_manual_cashflows_requires_auth():
@@ -686,8 +826,8 @@ def test_list_manual_cashflows_after_post():
 
     ts_ms = int(time.time() * 1000)
     body = {
+        "strategy_id": "strat_test_dn",
         "account_id": "0xmanual_list_test",
-        "venue": "hyperliquid",
         "cf_type": "DEPOSIT",
         "amount": 1234.56,
         "currency": "USDC",
@@ -709,7 +849,8 @@ def test_list_manual_cashflows_after_post():
     assert match["cf_type"] == "DEPOSIT"
     assert match["amount"] == pytest.approx(1234.56)
     assert match["currency"] == "USDC"
-    assert match["venue"] == "hyperliquid"
+    assert match.get("strategy_id") == "strat_test_dn"
+    assert match["venue"] is None
     assert match["account_id"] == "0xmanual_list_test"
     assert match["description"] == "list test"
 
@@ -750,8 +891,8 @@ def test_list_manual_cashflows_excludes_non_manual_meta():
     post = client.post(
         "/api/cashflows/manual",
         json={
+            "strategy_id": "strat_test_dn",
             "account_id": "0xmanual_only",
-            "venue": "hyperliquid",
             "cf_type": "DEPOSIT",
             "amount": 100.0,
             "currency": "USDC",
@@ -923,6 +1064,8 @@ if __name__ == "__main__":
         test_manual_cashflow_deposit,
         test_manual_cashflow_withdraw,
         test_manual_cashflow_validation,
+        test_manual_cashflow_rejects_paused_strategy,
+        test_list_manual_cashflows_legacy_venue_without_strategy_in_meta,
         test_list_manual_cashflows_requires_auth,
         test_options_preflight_skips_api_key,
         test_list_manual_cashflows_after_post,

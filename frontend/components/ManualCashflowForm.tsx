@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { postManualCashflow } from "@/lib/api";
-import type { ManualCashflowRequest } from "@/lib/types";
+import { useEffect, useState } from "react";
+import { fetchVaultOverview, postManualCashflow } from "@/lib/api";
+import type { ManualCashflowRequest, StrategySummary } from "@/lib/types";
 
 interface Props {
   onSuccess?: () => void;
@@ -10,20 +10,47 @@ interface Props {
 
 export default function ManualCashflowForm({ onSuccess }: Props) {
   const [loading, setLoading] = useState(false);
+  const [strategies, setStrategies] = useState<StrategySummary[]>([]);
+  const [strategiesError, setStrategiesError] = useState<string | null>(null);
   const [result, setResult] = useState<{
     success: boolean;
     message: string;
     cashflow_id?: number;
+    vault_cashflow_id?: number;
   } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchVaultOverview()
+      .then((ov) => {
+        if (!cancelled) {
+          const active = (ov.strategies ?? []).filter((s) => s.status === "ACTIVE");
+          setStrategies(active);
+          setStrategiesError(null);
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setStrategies([]);
+          setStrategiesError(
+            e instanceof Error ? e.message : "Could not load strategies",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setResult(null);
 
     const form = e.currentTarget;
+    const strategy_id = (form.elements.namedItem("strategy_id") as HTMLSelectElement)
+      .value;
     const account_id = (form.elements.namedItem("account_id") as HTMLInputElement)
       .value;
-    const venue = (form.elements.namedItem("venue") as HTMLSelectElement).value;
     const cf_type = (form.elements.namedItem("cf_type") as HTMLSelectElement)
       .value as "DEPOSIT" | "WITHDRAW";
     const amount = parseFloat(
@@ -35,10 +62,16 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
       .value;
     const description = descRaw?.trim() || undefined;
 
-    if (!account_id || !venue || !cf_type || !Number.isFinite(amount) || amount <= 0) {
+    if (
+      !strategy_id ||
+      !account_id ||
+      !cf_type ||
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
       setResult({
         success: false,
-        message: "All fields are required and amount must be positive.",
+        message: "Strategy, account, type, and a positive amount are required.",
       });
       return;
     }
@@ -52,8 +85,8 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
     }
 
     const payload: ManualCashflowRequest = {
+      strategy_id,
       account_id,
-      venue,
       cf_type,
       amount,
       currency,
@@ -67,11 +100,14 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
         success: true,
         message: `${cf_type} of $${amount.toFixed(2)} recorded successfully.`,
         cashflow_id: res.cashflow_id,
+        vault_cashflow_id: res.vault_cashflow_id,
       });
       onSuccess?.();
       form.reset();
       const cur = form.elements.namedItem("currency") as HTMLInputElement;
       if (cur) cur.value = "USDC";
+      const strat = form.elements.namedItem("strategy_id") as HTMLSelectElement;
+      if (strat && strategies.length > 0) strat.value = strategies[0].strategy_id;
     } catch (err) {
       setResult({
         success: false,
@@ -88,6 +124,10 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
         Manual Deposit / Withdraw
       </div>
 
+      {strategiesError && (
+        <p className="text-amber-400 text-sm mb-3">{strategiesError}</p>
+      )}
+
       {result && (
         <div
           className={`mb-4 p-3 rounded text-sm ${
@@ -97,9 +137,12 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
           }`}
         >
           {result.message}
-          {result.cashflow_id && (
+          {result.cashflow_id != null && (
             <span className="ml-2 text-xs text-gray-500">
-              ID: {result.cashflow_id}
+              PM #{result.cashflow_id}
+              {result.vault_cashflow_id != null && (
+                <> · Vault #{result.vault_cashflow_id}</>
+              )}
             </span>
           )}
         </div>
@@ -121,14 +164,22 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Venue</label>
+            <label className="block text-xs text-gray-400 mb-1">Strategy</label>
             <select
-              name="venue"
+              name="strategy_id"
               required
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+              disabled={strategies.length === 0}
+              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none disabled:opacity-50"
             >
-              <option value="hyperliquid">Hyperliquid</option>
-              <option value="felix">Felix</option>
+              {strategies.length === 0 ? (
+                <option value="">No active strategies</option>
+              ) : (
+                strategies.map((s) => (
+                  <option key={s.strategy_id} value={s.strategy_id}>
+                    {s.name} ({s.type})
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -186,7 +237,7 @@ export default function ManualCashflowForm({ onSuccess }: Props) {
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || strategies.length === 0}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm font-medium rounded transition-colors"
         >
           {loading ? "Submitting..." : "Submit"}

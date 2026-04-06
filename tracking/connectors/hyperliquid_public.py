@@ -189,6 +189,46 @@ def get_orderbook(symbol: str, limit: int = 20) -> Dict[str, float]:
     }
 
 
+def get_l2book(coin: str) -> Dict[str, float]:
+    """Fetch L2 orderbook via /info endpoint (supports spot @index format).
+
+    Uses POST /info {"type":"l2Book","coin":"..."} which works for:
+    - Native perps: coin="HYPE"
+    - Spot pairs: coin="@107" (universe index from spotMeta)
+
+    Does NOT work for builder dex perps (use allMids with dex= instead).
+
+    Returns {"bid": float, "ask": float, "mid": float} or empty dict on failure.
+    """
+    try:
+        data = _get("/info", {"type": "l2Book", "coin": coin})
+    except Exception:
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    levels = data.get("levels", [])
+
+    # HL L2Book response: {"levels": [[bids...], [asks...]], "coin": "...", "time": ...}
+    # Each side is a list of dicts: [{"px": "38.13", "sz": "1.24", "n": 1}, ...]
+    best_bid = 0.0
+    best_ask = 0.0
+
+    if len(levels) >= 1 and isinstance(levels[0], list) and levels[0]:
+        best_bid = float(levels[0][0].get("px", 0))
+
+    if len(levels) >= 2 and isinstance(levels[1], list) and levels[1]:
+        best_ask = float(levels[1][0].get("px", 0))
+
+    if best_bid <= 0 and best_ask <= 0:
+        return {}
+
+    mid = (best_bid + best_ask) / 2 if best_bid > 0 and best_ask > 0 else best_bid or best_ask
+
+    return {"bid": best_bid, "ask": best_ask, "mid": mid}
+
+
 if __name__ == "__main__":
     # Quick test
     print("Testing Hyperliquid connector...")

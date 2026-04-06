@@ -1,0 +1,38 @@
+{
+  "vault_name": "OpenClaw Vault",
+  "strategies": [
+    {
+      "strategy_id": "lending",
+      "name": "Lending",
+      "type": "LENDING",
+      "status": "ACTIVE",
+      "wallets": [
+        {"wallet_label": "lending", "venue": "hyperliquid"}
+      ],
+      "target_weight_pct": 50.0,
+      "config": {}
+    },
+    {
+      "strategy_id": "delta_neutral",
+      "name": "Delta Neutral",
+      "type": "DELTA_NEUTRAL",
+      "status": "ACTIVE",
+      "wallets": [
+        {"wallet_label": "alt", "venue": "hyperliquid"}
+      ],
+      "target_weight_pct": 45.0,
+      "config": {}
+    },
+    {
+      "strategy_id": "depeg",
+      "name": "Stablecoin Depeg",
+      "type": "DEPEG",
+      "status": "ACTIVE",
+      "wallets": [
+        {"wallet_label": "depeg", "venue": "hyperliquid"}
+      ],
+      "target_weight_pct": 5.0,
+      "config": {}
+    }
+  ]
+}

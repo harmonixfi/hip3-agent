@@ -1,6 +1,6 @@
 # Position Review Schedule
 
-Last updated: 2026-03-25
+Last updated: 2026-03-30
 
 ---
 
@@ -8,38 +8,36 @@ Last updated: 2026-03-25
 
 | Position | Next Review | Action If Positive | Action If Negative | Notes |
 |----------|-------------|--------------------|--------------------|-------|
-| ORCL | **2026-03-27 (Fri)** | HOLD, reassess weekly | EXIT — 15d avg still negative | Reduced from 55.774 → 22.174 on 03-25 |
-| MU | **2026-03-27 (Fri)** | HOLD, consider INCREASE if APR7 > 20% | EXIT — funding not recovering | Best 1d recovery in portfolio |
-| CRCL | **2026-03-27 (Fri)** | HOLD if latest APR turns positive | EXIT — lock current profit (+$4.24) | System flagged EXIT on 03-25, overridden to HOLD |
-| MSTR | **2026-03-25 21:30 ICT** | n/a | EXIT tonight at US market open | Dead money, $0.02/day funding |
-| XAU/kinetiq | **2026-04-01 (post-open)** | HOLD | MONITOR — check if consistent | Pending open, ~$5k, APR14 18.7% |
-| XAU/tradexyz | **2026-03-27 (Fri)** | SCALE if APR7 >15%, no 2 neg days | REDUCE if APR7 <10% or 2+ neg days | OPENED 03-25, 0.66 oz ~$2k, APR14 14.2%, 30% neg day rate |
+| FARTCOIN | **2026-04-01 (Wed)** | HOLD, consider INCREASE | MONITOR if APR7 drops below 20% | Opened 03-27, 3d APR 41.9%, top performer |
+| HYPE | **2026-04-01 (Wed)** | HOLD | MONITOR if APR7 drops below 15% | Opened 03-27, 3d APR 25.4%, consistent |
+| LINK | **2026-04-01 (Wed)** | HOLD if APR7 > 5% | EXIT — redeploy capital | Opened 03-27, 3d APR 0.9%, 1d recovering 8.9% |
+| GOLD | **2026-04-01 (Wed)** | HOLD | EXIT if APR7 < 3% sustained | Reopened 03-25, avg $0.38/d, 4.7% APR |
 
 ---
 
-## Friday 27 Mar Review Checklist
+## Wednesday 01 Apr Review Checklist
 
 ### Pre-Review (pull fresh data)
 - [ ] `pull_loris_funding.py` — fresh funding snapshot
 - [ ] `pull_hyperliquid_v3.py` — fresh market data
 - [ ] `pull_positions_v3.py` — position state
 - [ ] `pm_cashflows.py ingest` — realized cashflows
-- [ ] `report_daily_funding_with_portfolio.py --section portfolio-summary`
 
 ### Per-Position Evaluation
-- [ ] **ORCL**: Is 15d avg/day improving from -$1.89? Is 1d/2d trend sustaining?
-- [ ] **MU**: Is 15d avg/day turning positive? Is 1d spike ($2.26) repeating or fading?
-- [ ] **CRCL**: Has latest APR turned positive? Is lifetime PnL still positive?
+- [ ] **FARTCOIN**: Is 7d APR still > 20%? Is 1d trend sustaining above 15%?
+- [ ] **HYPE**: Is 7d APR still > 15%? Any negative funding spikes?
+- [ ] **LINK**: Has 7d APR improved above 5%? If not → EXIT candidate
+- [ ] **GOLD**: Is avg/day improving from $0.38? APR trend direction?
 
 ### Decision Framework
-- **HOLD criteria**: 2d APR > 5% AND 15d avg improving (less negative or positive)
-- **EXIT criteria**: 15d avg still negative AND 1d/2d trend reversing back to negative
-- **INCREASE criteria**: APR7 > 20% net AND stable trend (APR_latest > APR7 > APR14)
+- **HOLD criteria**: 7d APR > 10% AND trend stable or improving
+- **EXIT criteria**: 7d APR < 5% AND no recovery trend in 1d/3d
+- **INCREASE criteria**: 7d APR > 20% AND stable (1d ≈ 3d ≈ 7d)
 
 ### Post-Review
 - [ ] Update this file with new review dates
-- [ ] Write journal entry (`tracking/journal/2026-03-27.md`)
-- [ ] Update positions.json if any EXIT/rebalance decisions
+- [ ] Write journal entry (`tracking/journal/2026-04-01.md`)
+- [ ] Update positions.json if any changes
 - [ ] Sync to DB: `pm.py sync-registry`
 
 ---
@@ -48,7 +46,11 @@ Last updated: 2026-03-25
 
 | Date | Position | Decision | Rationale |
 |------|----------|----------|-----------|
+| 2026-03-30 | ALL | HOLD all, no changes | 3 days too early for rotation. FARTCOIN/HYPE strong, LINK/GOLD weak but monitoring |
+| 2026-03-28 | ORCL | EXIT (CLOSED) | 15d avg -$1.33, slow recovery, rotated to crypto |
+| 2026-03-28 | MU | EXIT (CLOSED) | +$2.85 lifetime, rotated to crypto |
+| 2026-03-28 | CRCL | EXIT (CLOSED) | +$5.47 lifetime, locked profit |
 | 2026-03-25 | ORCL | Reduce size 55.774 → 22.174, HOLD | 15d avg -$1.89, too large for bleeding position |
-| 2026-03-25 | MSTR | EXIT (scheduled 21:30 ICT) | Dead money, $0.02/day on $982 notional |
+| 2026-03-25 | MSTR | EXIT (CLOSED) | Dead money, $0.02/day on $982 notional |
 | 2026-03-25 | MU | HOLD to Fri review | Small loss, best 1d recovery |
 | 2026-03-25 | CRCL | HOLD to Fri review (override EXIT signal) | Lifetime PnL still positive |

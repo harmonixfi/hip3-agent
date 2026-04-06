@@ -1,0 +1,23 @@
+# Harmonix monitoring cron jobs
+# Position snapshots (every 5 min)
+*/5 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_positions_v3.py >> /app/logs/pull_positions.log 2>&1
+
+# Position prices (every 5 min, offset by 2 min)
+2-57/5 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_position_prices.py >> /app/logs/pull_position_prices.log 2>&1
+
+# Market data (hourly at :20)
+20 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_hyperliquid_v3.py >> /app/logs/pull_hyperliquid.log 2>&1
+
+# Computation pipeline (hourly at :30)
+30 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pipeline_hourly.py >> /app/logs/pipeline_hourly.log 2>&1
+
+# Vault multi-strategy snapshot (daily 02:05 UTC — needs HARMONIX_NAV_DB_URL for Lending ERC4626)
+5 2 * * * cd /app && env $(cat /etc/environment | xargs) python scripts/vault_daily_snapshot.py >> /app/logs/vault_daily_snapshot.log 2>&1
+
+# Realized funding/fees ledger ingest (hourly at :37)
+37 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pm_cashflows.py ingest --venues hyperliquid >> /app/logs/pm_cashflows_ingest.log 2>&1
+
+# Daily candidates export (7:00 AM GMT+7 = 00:00 UTC)
+0 0 * * * cd /app && env $(cat /etc/environment | xargs) python scripts/export_core_candidates.py --csv data/core_candidates_export.csv >> /app/logs/export_core_candidates.log 2>&1
+
+# Empty line required by cron

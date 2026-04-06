@@ -1,22 +1,26 @@
-# Arbit Environment Variables Example
-# Copy this file to .arbit_env and fill in your values
-# DO NOT commit .arbit_env to version control
+# Copy to `.arbit_env` and fill in values. Do not commit `.arbit_env`.
 
-# Paradex
-# Get JWT from Paradex dashboard or API
+# --- Paradex ---
 export PARADEX_JWT="your_paradex_jwt_token_here"
 export PARADEX_ACCOUNT_ADDRESS="0xYourParadexAddress"
 
-# Ethereal
-# Your Ethereum account address
+# --- Ethereal ---
 export ETHEREAL_ACCOUNT_ADDRESS="0xYourEthereumAddress"
-# Optional: Ethereal subaccount ID
 export ETHEREAL_SUBACCOUNT_ID=""
 
-# Hyperliquid
-# Optional: If different from ETHEREAL_ACCOUNT_ADDRESS
+# --- Hyperliquid / Lighter (optional; defaults if empty) ---
 export HYPERLIQUID_ADDRESS=""
-
-# Lighter
-# Optional: If different from ETHEREAL_ACCOUNT_ADDRESS
 export LIGHTER_L1_ADDRESS=""
+
+# --- Harmonix NAV Postgres (optional — vault lending equity) ---
+# Uncomment and set `HARMONIX_NAV_DB_URL` to enable `LendingProvider`.
+# Reference: `tracking/vault/providers/lending.py`
+
+# export HARMONIX_NAV_DB_URL="postgresql://USER:PASSWORD@HOST:5432/DATABASE"
+
+# Wallets (comma-separated): same list for ERC4626 + Aave. Optional if you rely on defaults / `config_json.lending_accounts`.
+# export HARMONIX_LENDING_ACCOUNT_ADDRESSES="0xaddr1,0xaddr2"
+
+# export HARMONIX_LENDING_CHAIN_ID="999"
+# export HARMONIX_LENDING_ERC4626_VAULTS="0xvault1,0xvault2"
+# export HARMONIX_LENDING_USDC_ADDRESS="0xb88339CB7199b77E23DB6E890353E22632Ba630f"

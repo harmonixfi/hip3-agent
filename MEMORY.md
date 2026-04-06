@@ -26,6 +26,7 @@ Last updated: 2026-03-06
 - Legs = one spot leg + one perp leg.
 - Position sizes are in **token units**, not USD.
 - DB timestamps are in **milliseconds**.
+- **Funding Summary** metrics (Funding Today, all-time sums vs `tracking_start_date`) use **UTC+0** calendar boundaries for “today” / date ranges — not local timezone.
 - `cf_type` values are uppercase.
 
 ## Risk defaults

@@ -1,0 +1,23 @@
+services:
+  harmonix-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: harmonix-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8001:8000"  # Only localhost — Cloudflare Tunnel connects here
+    volumes:
+      - ./tracking/db:/app/tracking/db        # SQLite DB (persistent)
+      - ./.arbit_env:/app/.arbit_env:ro        # Env vars (read-only)
+      - ./config:/app/config:ro                # Position + equity config
+      - ./logs:/app/logs                       # Cron logs (persistent)
+      - ./data:/app/data                       # Funding data CSVs (persistent)
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

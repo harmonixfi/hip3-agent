@@ -110,25 +110,16 @@
     "position_id": "pos_xyz_MU",
     "strategy_type": "SPOT_PERP",
     "base": "MU",
-    "status": "CLOSED",
+    "status": "OPEN",
     "legs": [
-      {
-        "leg_id": "pos_xyz_MU_SPOT",
-        "venue": "hyperliquid",
-        "inst_id": "MU",
-        "side": "LONG",
-        "qty": 6.567,
-        "qty_type": "token",
-        "wallet_label": "main"
-      },
       {
         "leg_id": "pos_xyz_MU_PERP",
         "venue": "hyperliquid",
         "inst_id": "xyz:MU",
         "side": "SHORT",
-        "qty": 6.567,
+        "qty": 13.205,
         "qty_type": "token",
-        "wallet_label": "main"
+        "wallet_label": "alt"
       }
     ]
   },
@@ -162,23 +153,14 @@
     "position_id": "pos_xyz_MSTR",
     "strategy_type": "SPOT_PERP",
     "base": "MSTR",
-    "status": "CLOSED",
+    "status": "OPEN",
     "legs": [
-      {
-        "leg_id": "pos_xyz_MSTR_SPOT",
-        "venue": "hyperliquid",
-        "inst_id": "MSTR",
-        "side": "LONG",
-        "qty": 7.018,
-        "qty_type": "token",
-        "wallet_label": "alt"
-      },
       {
         "leg_id": "pos_xyz_MSTR_PERP",
         "venue": "hyperliquid",
         "inst_id": "xyz:MSTR",
         "side": "SHORT",
-        "qty": 7.018,
+        "qty": 39.082,
         "qty_type": "token",
         "wallet_label": "alt"
       }

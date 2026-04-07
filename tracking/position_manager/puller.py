@@ -319,6 +319,7 @@ def run_pull(
     registry_path: Optional[Path] = None,
     venues_filter: Optional[List[str]] = None,
     verbose: bool = True,
+    _con_override: Optional[sqlite3.Connection] = None,
 ) -> Dict:
     """
     Run the position pull process.
@@ -374,9 +375,11 @@ def run_pull(
             if venue:
                 venues_to_pull.add(venue)
 
-    # Filter if requested
+    # If a venues_filter is provided, always include those venues (even if no
+    # managed legs exist yet for them) so equity snapshots are written for
+    # every env-configured wallet.
     if venues_set:
-        venues_to_pull = venues_to_pull.intersection(venues_set)
+        venues_to_pull = venues_to_pull.union(venues_set)
 
     if verbose:
         print(f"Venues to pull from: {sorted(venues_to_pull)}")
@@ -392,8 +395,9 @@ def run_pull(
         "errors": [],
     }
 
-    con = connect(db_path)
-    ensure_multi_wallet_columns(con)
+    con = _con_override if _con_override is not None else connect(db_path)
+    if _con_override is None:
+        ensure_multi_wallet_columns(con)
 
     for venue in sorted(venues_to_pull):
         if verbose:
@@ -438,15 +442,9 @@ def run_pull(
                 continue
 
             try:
-                has_managed_legs = any(
-                    leg.get("venue") == venue and leg.get("wallet_label", "main") == wallet_label
-                    for mp in positions
-                    for leg in mp.get("legs", [])
-                )
-
                 account_id = credential or (result["account_snapshot"] or {}).get("account_id", "")
 
-                if result["account_snapshot"] and has_managed_legs:
+                if result["account_snapshot"]:
                     write_account_snapshot(con, venue, result["account_snapshot"], ts_ms)
                     summary["snapshots_written"] += 1
 
@@ -517,7 +515,8 @@ def run_pull(
                 wallet_str = f" across {wallets} wallets" if wallets else ""
                 print(f"  {venue}: OK ({total} managed legs{wallet_str})")
 
-    con.close()
+    if _con_override is None:
+        con.close()
 
     if verbose:
         print(f"\nSummary:")

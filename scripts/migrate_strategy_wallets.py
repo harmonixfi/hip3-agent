@@ -222,14 +222,18 @@ def recompute_vault() -> bool:
     """Step 7: Recompute vault_strategy_snapshots (non-fatal)."""
     _print_section("STEP 7: RECOMPUTE vault snapshots")
     try:
-        from tracking.vault.snapshot import compute_vault_snapshot
+        from tracking.vault.snapshot import run_daily_snapshot
         con = sqlite3.connect(str(DB_PATH))
         try:
-            compute_vault_snapshot(con)
+            result = run_daily_snapshot(con)
             con.commit()
         finally:
             con.close()
-        print(f"  OK: vault snapshot computed")
+        if isinstance(result, dict):
+            n_strategies = len(result.get("strategies", [])) if "strategies" in result else "?"
+            print(f"  OK: vault snapshot computed (strategies={n_strategies})")
+        else:
+            print(f"  OK: vault snapshot computed")
         return True
     except Exception as e:
         print(f"  WARNING: vault recompute skipped or failed: {e}")

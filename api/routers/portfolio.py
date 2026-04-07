@@ -41,10 +41,16 @@ def _compute_fund_utilization(
 ) -> FundUtilization:
     """Compute leverage, deployed/available capital from live DB data.
 
-    Multi-venue ready: queries are filtered by venue and account_id from
-    pm_account_snapshots. Adding a new venue only requires populating
-    the same snapshot tables.
+    Filters to delta_neutral strategy wallets only — lending/depeg tracked separately.
     """
+    from tracking.position_manager.accounts import get_strategy_wallets
+
+    try:
+        dn_wallets = get_strategy_wallets("delta_neutral")
+    except KeyError:
+        dn_wallets = []
+    dn_addresses = {w["address"].lower() for w in dn_wallets if w.get("address")}
+
     # 1. Per-account available/margin from latest snapshots (already fetched in caller
     #    but we need extra columns, so re-query with full columns)
     acct_detail_rows = db.execute(
@@ -59,6 +65,10 @@ def _compute_fund_utilization(
         ) latest ON a.account_id = latest.account_id AND a.ts = latest.max_ts
         """
     ).fetchall()
+
+    # Filter to DN wallets only (other strategies tracked separately in vault page)
+    if dn_addresses:
+        acct_detail_rows = [r for r in acct_detail_rows if (r["account_id"] or "").lower() in dn_addresses]
 
     # 2. Per-account notional from OPEN/PAUSED/EXITING legs
     leg_notional_rows = db.execute(
@@ -139,7 +149,14 @@ def portfolio_overview(
         "SELECT * FROM pm_portfolio_snapshots ORDER BY ts DESC LIMIT 1"
     ).fetchone()
 
-    # 2. Latest account snapshots (equity per wallet)
+    # 2. Latest account snapshots (equity per wallet), filtered to DN wallets only
+    from tracking.position_manager.accounts import get_strategy_wallets
+    try:
+        _dn_wallets = get_strategy_wallets("delta_neutral")
+    except KeyError:
+        _dn_wallets = []
+    _dn_addresses = {w["address"].lower() for w in _dn_wallets if w.get("address")}
+
     account_rows = db.execute(
         """
         SELECT a.account_id, a.venue, a.total_balance
@@ -151,6 +168,9 @@ def portfolio_overview(
         ) latest ON a.account_id = latest.account_id AND a.ts = latest.max_ts
         """
     ).fetchall()
+
+    if _dn_addresses:
+        account_rows = [r for r in account_rows if (r["account_id"] or "").lower() in _dn_addresses]
 
     # 3. Open positions count
     open_count = db.execute(
@@ -294,28 +314,22 @@ def portfolio_overview(
 def _account_label(account_id: str) -> str:
     """Derive a human-friendly label from account_id.
 
-    Checks HYPERLIQUID_ACCOUNTS_JSON env var for label mapping.
-    Supports both formats:
-      - dict: {"main": "0xABC...", "alt": "0xDEF..."}
-      - list: [{"address": "0xABC...", "label": "main"}, ...]
-    Falls back to truncated address.
+    Reads from config/strategies.json via _load_strategies_cached. Falls back to
+    truncated address if no match found.
     """
-    import os
+    from tracking.position_manager.accounts import _load_strategies_cached
 
-    accounts_json = os.environ.get("HYPERLIQUID_ACCOUNTS_JSON", "")
-    if accounts_json:
-        try:
-            accounts = json.loads(accounts_json)
-            if isinstance(accounts, dict):
-                # Format: {label: address}
-                for label, address in accounts.items():
-                    if isinstance(address, str) and address.lower() == account_id.lower():
-                        return label
-            elif isinstance(accounts, list):
-                # Format: [{address, label}, ...]
-                for acct in accounts:
-                    if isinstance(acct, dict) and acct.get("address", "").lower() == account_id.lower():
-                        return acct.get("label", account_id[:10])
-        except (json.JSONDecodeError, TypeError):
-            pass
+    try:
+        strategies = _load_strategies_cached()
+    except Exception:
+        strategies = []
+
+    for s in strategies:
+        for w in s.get("wallets", []) or []:
+            if not isinstance(w, dict):
+                continue
+            addr = w.get("address", "")
+            if isinstance(addr, str) and addr.lower() == account_id.lower():
+                return str(w.get("label", account_id[:10]))
+
     return account_id[:10]

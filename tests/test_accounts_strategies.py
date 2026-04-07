@@ -164,3 +164,33 @@ def test_duplicate_labels_across_strategies_rejected(tmp_path, monkeypatch):
 
     with pytest.raises(ValueError, match="duplicate.*label.*main"):
         accounts_mod.resolve_venue_accounts("hyperliquid")
+
+
+def test_get_strategy_wallets_filters_malformed_entries(tmp_path, monkeypatch):
+    """Wallets missing label or address must be filtered out (not returned as empty strings)."""
+    malformed = {
+        "vault_name": "Malformed",
+        "strategies": [
+            {
+                "strategy_id": "delta_neutral",
+                "name": "DN", "type": "DELTA_NEUTRAL", "status": "ACTIVE",
+                "wallets": [
+                    {"label": "good", "venue": "hyperliquid", "address": "0xGOOD"},
+                    {"label": "no_addr", "venue": "hyperliquid"},
+                    {"venue": "hyperliquid", "address": "0xNOLABEL"},
+                    {"label": "", "venue": "hyperliquid", "address": "0xEMPTY"},
+                ],
+                "target_weight_pct": 100.0, "config": {},
+            }
+        ],
+    }
+    p = tmp_path / "strategies.json"
+    p.write_text(json.dumps(malformed))
+    monkeypatch.setattr(accounts_mod, "_STRATEGIES_PATH", p)
+    accounts_mod._CACHE.clear()
+
+    result = accounts_mod.get_strategy_wallets("delta_neutral")
+
+    assert len(result) == 1
+    assert result[0]["label"] == "good"
+    assert result[0]["address"] == "0xGOOD"

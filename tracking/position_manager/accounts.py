@@ -140,11 +140,11 @@ def get_strategy_wallets(strategy_id: str) -> List[Dict[str, str]]:
             wallets = s.get("wallets", []) or []
             return [
                 {
-                    "label": str(w.get("label", "")),
+                    "label": str(w.get("label")),
                     "venue": str(w.get("venue", "")),
-                    "address": str(w.get("address", "")),
+                    "address": str(w.get("address")),
                 }
                 for w in wallets
-                if isinstance(w, dict)
+                if isinstance(w, dict) and w.get("label") and w.get("address")
             ]
     raise KeyError(f"strategy not found: {strategy_id}")

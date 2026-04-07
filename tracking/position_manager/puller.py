@@ -72,7 +72,7 @@ def load_positions_from_db(con: sqlite3.Connection, venues_filter: Optional[Set[
     """Load managed positions from DB (pm_positions/pm_legs).
 
     Note: we do NOT filter by `pm_positions.venue` because multi-venue positions store venue as "multi".
-    If a venues_filter is provided, we apply it later by intersecting `venues_to_pull`.
+    If a venues_filter is provided, those venues are unioned into `venues_to_pull` so all filtered venues are always visited.
     """
     sql = """
     SELECT p.position_id, p.venue, p.status,

@@ -21,10 +21,15 @@ class DeltaNeutralProvider(EquityProvider):
         breakdown: dict = {}
 
         for wallet in wallets:
-            label = wallet.get("wallet_label", "main")
+            # Prefer address directly from strategy config; fall back to resolver lookup
+            address = wallet.get("address")
             venue = wallet.get("venue", "hyperliquid")
-            accounts = resolve_venue_accounts(venue)
-            address = accounts.get(label)
+            label = wallet.get("label") or wallet.get("wallet_label", "main")
+
+            if not address:
+                accounts = resolve_venue_accounts(venue)
+                address = accounts.get(label)
+
             if not address:
                 continue
 

@@ -136,7 +136,7 @@ def compute_portfolio_snapshot(con, *, tracking_start_date=DEFAULT_TRACKING_STAR
         daily_change = total_equity - prior_equity
         net_deposits_24h = _get_net_deposits(con, since_ms=now - 24 * 3600 * 1000)
         cashflow_adjusted_change = daily_change - net_deposits_24h
-        apr_daily = (cashflow_adjusted_change / prior_equity) * 365.0
+        apr_daily = (cashflow_adjusted_change / prior_equity) * 365.0 * 100.0
 
         # Circuit-breaker: if equity moved >50% with no recorded deposits,
         # the change is likely an unrecorded deposit/withdrawal — suppress.

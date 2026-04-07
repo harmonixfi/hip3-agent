@@ -17,6 +17,7 @@ from scripts.report_daily_funding_sections import load_felix_membership, normali
 from tracking.analytics.cost_model_v3 import CostModelV3
 
 APPROVED_FUNDING_VENUES = ("hyperliquid", "tradexyz", "hyena", "kinetiq")
+EQUITY_VENUES = frozenset({"tradexyz", "kinetiq"})
 FRESHNESS_MAX_HOURS = 12.0
 NORMALIZED_BREAKEVEN_NOTIONAL_USD = 150_000.0
 SUPPORTED_FLAGS = {
@@ -132,6 +133,10 @@ def _load_funding_groups(
             symbol = normalize_symbol(row.get("symbol") or "")
             ts = _parse_timestamp(row.get("timestamp_utc") or "")
             if not symbol or ts is None:
+                continue
+            # Equity venues: drop weekend samples (Sat=5, Sun=6) since tradfi
+            # market is closed and crypto-side funding spikes are noise.
+            if venue in EQUITY_VENUES and ts.weekday() >= 5:
                 continue
             try:
                 rate = float(row.get("funding_8h_rate") or "")

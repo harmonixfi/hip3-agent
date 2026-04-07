@@ -1,0 +1,1 @@
+source .arbit_env && .venv/bin/uvicorn api.main:app --reload

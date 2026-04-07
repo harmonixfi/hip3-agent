@@ -6,11 +6,11 @@
       "name": "Lending",
       "type": "LENDING",
       "status": "ACTIVE",
-      "wallets": [
-        {"wallet_label": "lending", "venue": "hyperliquid"}
-      ],
+      "wallets": [],
       "target_weight_pct": 50.0,
-      "config": {}
+      "config": {
+        "lending_accounts": ["0x0BdFcFbd77c0f3170aC5231480BbB1E45eEBa9ae"]
+      }
     },
     {
       "strategy_id": "delta_neutral",
@@ -18,7 +18,8 @@
       "type": "DELTA_NEUTRAL",
       "status": "ACTIVE",
       "wallets": [
-        {"wallet_label": "alt", "venue": "hyperliquid"}
+        {"label": "alt",  "venue": "hyperliquid", "address": "0x3c2c0B452B465c595fE106Ef40c55Bf4383D2453"},
+        {"label": "main", "venue": "hyperliquid", "address": "0x4Fde618c143640638433a1f00431C6B49bb08322"}
       ],
       "target_weight_pct": 45.0,
       "config": {}
@@ -29,7 +30,7 @@
       "type": "DEPEG",
       "status": "ACTIVE",
       "wallets": [
-        {"wallet_label": "depeg", "venue": "hyperliquid"}
+        {"label": "depeg", "venue": "hyperliquid", "address": "0x0BdFcFbd77c0f3170aC5231480BbB1E45eEBa9ae"}
       ],
       "target_weight_pct": 5.0,
       "config": {}

@@ -40,15 +40,34 @@ def _date_to_ms(date_str: str) -> int:
 
 
 def _get_total_equity(con: sqlite3.Connection) -> Dict[str, Any]:
-    rows = con.execute("""
+    """Return Delta Neutral portfolio equity only.
+
+    Filters pm_account_snapshots to addresses owned by the delta_neutral strategy.
+    Other strategy wallets (depeg, lending) are tracked separately via vault providers.
+    """
+    from tracking.position_manager.accounts import get_strategy_wallets
+
+    try:
+        dn_wallets = get_strategy_wallets("delta_neutral")
+    except KeyError:
+        dn_wallets = []
+
+    dn_addresses = [w["address"] for w in dn_wallets if w.get("address")]
+    if not dn_addresses:
+        return {"total_equity_usd": 0.0, "equity_by_account": {}}
+
+    placeholders = ",".join(["?"] * len(dn_addresses))
+    sql = f"""
         SELECT a.account_id, a.total_balance
         FROM pm_account_snapshots a
         INNER JOIN (
             SELECT account_id, MAX(ts) as max_ts
             FROM pm_account_snapshots
+            WHERE account_id IN ({placeholders})
             GROUP BY account_id
         ) latest ON a.account_id = latest.account_id AND a.ts = latest.max_ts
-    """).fetchall()
+    """
+    rows = con.execute(sql, dn_addresses).fetchall()
 
     equity_by_account: Dict[str, float] = {}
     total = 0.0

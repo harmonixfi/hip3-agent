@@ -156,6 +156,7 @@ def sync_registry(con: sqlite3.Connection, registry_path: Path) -> Dict[str, Any
                             "leverage": leg.leverage,
                             "margin_mode": leg.margin_mode,
                             "collateral": leg.collateral,
+                            "wallet_label": leg.wallet_label,
                         },
                         separators=(",", ":"),
                         sort_keys=True,
@@ -164,6 +165,23 @@ def sync_registry(con: sqlite3.Connection, registry_path: Path) -> Dict[str, Any
                 ),
             )
             n_legs += 1
+
+        # Validate wallet_labels: warn if label not in env accounts
+        _venue_accounts_cache: dict = {}
+        for leg in p.legs:
+            if p.status not in ("OPEN", "PAUSED", "EXITING"):
+                continue
+            if leg.venue not in _venue_accounts_cache:
+                _venue_accounts_cache[leg.venue] = resolve_venue_accounts(leg.venue)
+            accounts = _venue_accounts_cache[leg.venue]
+            label = leg.wallet_label or "main"
+            if accounts and label not in accounts:
+                known = sorted(accounts.keys())
+                print(
+                    f"WARNING: {p.position_id}/{leg.leg_id}: wallet_label='{label}' not in "
+                    f"{leg.venue.upper()}_ACCOUNTS_JSON (known: {known}). "
+                    f"Equity for this wallet will not be tracked until fixed."
+                )
 
     con.commit()
     return {"positions": n_pos, "legs": n_legs, "registry": str(registry_path)}

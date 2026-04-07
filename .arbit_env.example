@@ -9,6 +9,10 @@ export ETHEREAL_ACCOUNT_ADDRESS="0xYourEthereumAddress"
 export ETHEREAL_SUBACCOUNT_ID=""
 
 # --- Hyperliquid / Lighter (optional; defaults if empty) ---
+# Wallet config for Hyperliquid is now in config/strategies.json (each strategy's wallets[]).
+# HYPERLIQUID_ACCOUNTS_JSON is NO LONGER used.
+# HYPERLIQUID_ADDRESS is kept as legacy single-wallet fallback for bootstrap scenarios
+# (only used when strategies.json has no wallets for hyperliquid venue).
 export HYPERLIQUID_ADDRESS=""
 export LIGHTER_L1_ADDRESS=""
 

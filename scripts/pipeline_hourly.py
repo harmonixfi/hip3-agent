@@ -101,6 +101,36 @@ def step_unrealized_pnl(con: sqlite3.Connection) -> list:
     return results
 
 
+def step_sync_leg_prices(con: sqlite3.Connection) -> int:
+    """Sync pm_legs.current_price from prices_v3 for OPEN legs.
+
+    Covers legs that have no fills (e.g. Felix spot legs) which are excluded
+    from the upnl step's INNER JOIN on pm_entry_prices. Ensures the API
+    always shows fresh prices regardless of private API availability.
+    """
+    from tracking.pipeline.price_utils import resolve_price
+    legs = con.execute(
+        "SELECT leg_id, venue, inst_id FROM pm_legs WHERE status = 'OPEN'"
+    ).fetchall()
+    updated = 0
+    for leg_id, venue, inst_id in legs:
+        row = resolve_price(con, venue, inst_id, leg_id=leg_id)
+        if row is None:
+            continue
+        price = row.get("mid") or row.get("last") or row.get("bid") or row.get("ask")
+        if price is None:
+            continue
+        # Only update if prices_v3 has a fresh row (ts > 0 means it came from Tier 1)
+        if row.get("ts", 0) > 0:
+            con.execute(
+                "UPDATE pm_legs SET current_price = ? WHERE leg_id = ?",
+                (price, leg_id),
+            )
+            updated += 1
+    con.commit()
+    return updated
+
+
 def step_spreads(con: sqlite3.Connection) -> list:
     """Compute entry/exit spreads."""
     from tracking.pipeline.spreads import compute_spreads
@@ -163,6 +193,9 @@ def run_pipeline(
 
     # Step 4: Unrealized PnL
     _run_step("unrealized_pnl", step_unrealized_pnl, con)
+
+    # Step 4b: Sync pm_legs.current_price from prices_v3 for legs without fills (e.g. Felix spot)
+    _run_step("sync_leg_prices", step_sync_leg_prices, con)
 
     # Step 5: Spreads
     _run_step("spreads", step_spreads, con)

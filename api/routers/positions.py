@@ -191,9 +191,15 @@ def _build_position_summary(
         (position_id,),
     ).fetchall()
 
-    # OPEN/PAUSED/EXITING: amount = sum of abs(size * price) across legs (no total_balance on pm_legs).
-    # CLOSED keeps registry amount_usd for historical reporting.
     status = pos["status"]
+
+    # Exclude CLOSED legs from active positions — prevents stale replaced legs
+    # (e.g. pos_xyz_MSTR_SPOT after migrating to Felix) from triggering
+    # incomplete_notional=True and blanking all APR fields.
+    if status != "CLOSED":
+        leg_rows = [lr for lr in leg_rows if lr["status"] != "CLOSED"]
+
+    # OPEN/PAUSED/EXITING: amount = sum of abs(size * price) across legs (no total_balance on pm_legs).
     if status == "CLOSED":
         amount_usd = meta.get("amount_usd")
     else:
@@ -241,15 +247,17 @@ def _build_position_summary(
             )
         )
 
-    # Funding and fees for this position
+    # Funding and fees for this position — only from created_at_ms onwards
+    # (prevents pre-migration cashflows from contaminating carry_apr)
+    cf_start_ms = pos["created_at_ms"] or 0
     funding = db.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM pm_cashflows WHERE position_id = ? AND cf_type = 'FUNDING'",
-        (position_id,),
+        "SELECT COALESCE(SUM(amount), 0) FROM pm_cashflows WHERE position_id = ? AND cf_type = 'FUNDING' AND ts >= ?",
+        (position_id, cf_start_ms),
     ).fetchone()[0]
 
     fees = db.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM pm_cashflows WHERE position_id = ? AND cf_type = 'FEE'",
-        (position_id,),
+        "SELECT COALESCE(SUM(amount), 0) FROM pm_cashflows WHERE position_id = ? AND cf_type = 'FEE' AND ts >= ?",
+        (position_id, cf_start_ms),
     ).fetchone()[0]
 
     net_carry = funding + fees

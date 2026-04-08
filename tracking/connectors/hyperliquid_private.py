@@ -209,6 +209,7 @@ class HyperliquidPrivateConnector(PrivateConnectorBase):
         # Value each balance
         exclude_set = set(exclude_spot_tokens or [])
         spot_tokens: Dict[str, float] = {}
+        spot_quantities: Dict[str, float] = {}  # coin → raw token qty (not USD)
         spot_equity = 0.0
         spot_excluded = 0.0
 
@@ -228,6 +229,7 @@ class HyperliquidPrivateConnector(PrivateConnectorBase):
 
             val = qty * px
             spot_tokens[coin] = round(val, 2)
+            spot_quantities[coin] = qty  # raw token qty for pm_legs.size updates
 
             if coin in exclude_set:
                 spot_excluded += val
@@ -237,6 +239,7 @@ class HyperliquidPrivateConnector(PrivateConnectorBase):
         breakdown["spot_equity"] = round(spot_equity, 2)
         breakdown["spot_excluded"] = round(spot_excluded, 2)
         breakdown["spot_tokens"] = spot_tokens
+        breakdown["spot_quantities"] = spot_quantities  # raw qty by coin name
 
         total_balance = total_perp + spot_equity
 

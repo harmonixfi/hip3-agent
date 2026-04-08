@@ -4,16 +4,14 @@ from __future__ import annotations
 import json, sqlite3, time
 from typing import Any, Dict, List, Optional, Tuple
 
+from .price_utils import resolve_price
+
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
-def _fetch_latest_price(con, venue, inst_id):
-    row = con.execute(
-        "SELECT bid, ask, mid, last, ts FROM prices_v3 WHERE venue = ? AND inst_id = ? ORDER BY ts DESC LIMIT 1",
-        (venue, inst_id),
-    ).fetchone()
-    if row is None: return None
-    return {"bid": row[0], "ask": row[1], "mid": row[2], "last": row[3], "ts": row[4]}
+def _fetch_latest_price(con, venue, inst_id, leg_id=None):
+    """Two-tier price lookup: prices_v3 first, pm_legs.current_price fallback."""
+    return resolve_price(con, venue, inst_id, leg_id=leg_id)
 
 def _resolve_exit_price(price_row, side):
     preferred = price_row.get("bid") if side == "LONG" else price_row.get("ask")
@@ -53,7 +51,7 @@ def compute_unrealized_pnl(con, *, position_ids=None):
     pos_upnl = {}
 
     for leg_id, position_id, venue, inst_id, side, size, avg_entry in legs:
-        price_row = _fetch_latest_price(con, venue, inst_id)
+        price_row = _fetch_latest_price(con, venue, inst_id, leg_id=leg_id)
         if price_row is None:
             results.append({"leg_id": leg_id, "position_id": position_id, "skipped": True, "skip_reason": "no_price"})
             continue

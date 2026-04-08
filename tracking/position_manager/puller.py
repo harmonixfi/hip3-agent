@@ -379,6 +379,7 @@ def write_leg_snapshots(con: sqlite3.Connection, venue: str, positions: List[Dic
         ))
 
         # Best-effort update latest fields on pm_legs (useful for quick queries).
+        # size is updated when live data provides it (perp positions + spot balances).
         try:
             con.execute(
                 """
@@ -386,7 +387,8 @@ def write_leg_snapshots(con: sqlite3.Connection, venue: str, positions: List[Dic
                 SET current_price = COALESCE(?, current_price),
                     unrealized_pnl = COALESCE(?, unrealized_pnl),
                     realized_pnl = COALESCE(?, realized_pnl),
-                    account_id = COALESCE(?, account_id)
+                    account_id = COALESCE(?, account_id),
+                    size = COALESCE(?, size)
                 WHERE leg_id = ?
                 """,
                 (
@@ -394,6 +396,7 @@ def write_leg_snapshots(con: sqlite3.Connection, venue: str, positions: List[Dic
                     pos.get("unrealized_pnl"),
                     pos.get("realized_pnl"),
                     pos.get("account_id"),
+                    pos.get("size"),
                     pos.get("leg_id", ""),
                 ),
             )
@@ -657,15 +660,28 @@ def run_pull(
                             vp = idx.get(key)
                             if not vp:
                                 continue
+                            inst_id = vp.get("inst_id") or ""
+                            current_px = vp.get("current_price")
+                            upnl = vp.get("unrealized_pnl")
+                            # Felix API does not return current_price; use HL mark when available
+                            if current_px is None and hl_mtm:
+                                current_px = hl_mtm.get(inst_id)
+                                if current_px is not None:
+                                    entry_px = vp.get("entry_price")
+                                    size = vp.get("size")
+                                    side = (vp.get("side") or "").upper()
+                                    if entry_px is not None and size is not None:
+                                        direction = 1 if side == "LONG" else -1
+                                        upnl = (current_px - entry_px) * size * direction
                             mapped.append({
                                 "leg_id": ml["leg_id"],
                                 "position_id": ml["position_id"],
-                                "inst_id": vp.get("inst_id"),
+                                "inst_id": inst_id,
                                 "side": (vp.get("side") or "").upper(),
                                 "size": vp.get("size"),
                                 "entry_price": vp.get("entry_price"),
-                                "current_price": vp.get("current_price"),
-                                "unrealized_pnl": vp.get("unrealized_pnl"),
+                                "current_price": current_px,
+                                "unrealized_pnl": upnl,
                                 "realized_pnl": vp.get("realized_pnl"),
                                 "raw_json": vp.get("raw_json", {}),
                                 "account_id": account_id,
@@ -784,15 +800,55 @@ def run_pull(
                             "account_id": account_id,
                         })
 
-                    if mapped:
-                        if verbose:
-                            _verbose_log_mapped_legs(
-                                venue,
-                                mapped,
-                                wallet_label=wallet_label if len(accounts) > 1 else None,
-                            )
-                        write_leg_snapshots(con, venue, mapped, ts_ms)
-                        summary["snapshots_written"] += len(mapped)
+                # Sync spot leg sizes from live HL balance (spot_quantities).
+                # fetch_open_positions() only returns perp positions, so spot legs
+                # never match the perp index above — their size would stay frozen
+                # at the registry value. spot_quantities provides live token qty
+                # keyed by HL coin name (e.g. "UFART"), which matches the prefix
+                # of inst_id ("UFART/USDC" → token = "UFART").
+                spot_quantities: Dict[str, float] = {}
+                if result.get("account_snapshot"):
+                    spot_quantities = (
+                        (result["account_snapshot"].get("raw_json") or {})
+                        .get("spot_quantities", {})
+                    )
+
+                if spot_quantities:
+                    for mp in positions:
+                        for leg in mp.get("legs", []):
+                            if (leg.get("venue") != venue or
+                                    leg.get("wallet_label", "main") != wallet_label):
+                                continue
+                            inst_id = leg.get("inst_id", "")
+                            if "/" not in inst_id:
+                                continue  # Spot legs have "/" (e.g. "UFART/USDC")
+                            token = inst_id.split("/")[0]  # "UFART/USDC" → "UFART"
+                            live_qty = spot_quantities.get(token)
+                            if live_qty is None or live_qty <= 0:
+                                continue
+                            mapped.append({
+                                "leg_id": leg["leg_id"],
+                                "position_id": mp.get("position_id"),
+                                "inst_id": inst_id,
+                                "side": "LONG",
+                                "size": live_qty,
+                                "entry_price": None,
+                                "current_price": None,
+                                "unrealized_pnl": None,
+                                "realized_pnl": None,
+                                "raw_json": {},
+                                "account_id": account_id,
+                            })
+
+                if mapped:
+                    if verbose:
+                        _verbose_log_mapped_legs(
+                            venue,
+                            mapped,
+                            wallet_label=wallet_label if len(accounts) > 1 else None,
+                        )
+                    write_leg_snapshots(con, venue, mapped, ts_ms)
+                    summary["snapshots_written"] += len(mapped)
 
                 venue_mapped_total.extend(mapped)
 

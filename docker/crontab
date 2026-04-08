@@ -15,8 +15,17 @@
 # Market data (hourly at :20)
 20 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_hyperliquid_v3.py >> /app/logs/pull_hyperliquid.log 2>&1
 
+# Felix market prices (hourly at :22) — public endpoint, no JWT; populates prices_v3 for Felix spot legs
+22 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_felix_market.py >> /app/logs/pull_felix_market.log 2>&1
+
+# Loris funding data (every 30 min) — required for candidate ranking / rotation report
+*/30 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_loris_funding.py >> /app/logs/pull_loris_funding.log 2>&1
+
 # Computation pipeline (hourly at :30) — includes vault snapshot refresh for dashboard
 30 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pipeline_hourly.py >> /app/logs/pipeline_hourly.log 2>&1
+
+# Equity daily snapshot (daily 02:00 UTC = 09:00 ICT) — tracks total equity per account
+0 2 * * * cd /app && env $(cat /etc/environment | xargs) python scripts/equity_daily.py snapshot >> /app/logs/equity_daily.log 2>&1
 
 # Vault multi-strategy snapshot (daily 02:05 UTC). Optional duplicate of pipeline step 7;
 # keeps a fixed daily run when NAV/lending DB is slow; safe to remove if you rely on hourly only.

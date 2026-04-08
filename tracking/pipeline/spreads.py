@@ -20,6 +20,8 @@ import sqlite3
 import time
 from typing import Any, Dict, List, Optional
 
+from .price_utils import resolve_price
+
 
 # ---------------------------------------------------------------------------
 # Pure math helpers
@@ -51,27 +53,12 @@ def _fetch_latest_price(
     *,
     leg_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Fetch latest price row for (venue, inst_id) from prices_v3.
+    """Two-tier price lookup: prices_v3 first, pm_legs.current_price fallback.
 
-    For ``venue=felix``, if there is no ``prices_v3`` row (equities often absent),
-    fall back to ``pm_legs.current_price`` from the position puller (registry match).
+    Delegates to ``resolve_price`` in ``price_utils`` — venue-agnostic, so
+    any venue that writes ``current_price`` via the puller works automatically.
     """
-    row = con.execute(
-        "SELECT bid, ask, mid, last, ts FROM prices_v3"
-        " WHERE venue = ? AND inst_id = ? ORDER BY ts DESC LIMIT 1",
-        (venue, inst_id),
-    ).fetchone()
-    if row is not None:
-        return {"bid": row[0], "ask": row[1], "mid": row[2], "last": row[3], "ts": row[4]}
-    if venue == "felix" and leg_id:
-        lr = con.execute(
-            "SELECT current_price FROM pm_legs WHERE leg_id = ? AND venue = 'felix'",
-            (leg_id,),
-        ).fetchone()
-        if lr and lr[0] is not None:
-            m = float(lr[0])
-            return {"bid": m, "ask": m, "mid": m, "last": m, "ts": 0}
-    return None
+    return resolve_price(con, venue, inst_id, leg_id=leg_id)
 
 
 def _get_exit_bid(price_row: Dict[str, Any]) -> Optional[float]:

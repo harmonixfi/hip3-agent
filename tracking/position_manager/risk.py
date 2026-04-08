@@ -9,41 +9,31 @@ import json
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 
+from tracking.pipeline.price_utils import resolve_price
 
-def _enrich_leg_price_from_db(con, venue: str, inst_id: str) -> Optional[float]:
-    """
-    Query DB v3 prices_v3 for the latest price for a given (venue, inst_id).
 
-    Prefers: mid > mark > last (first non-null).
+def _enrich_leg_price_from_db(
+    con, venue: str, inst_id: str, leg_id: Optional[str] = None
+) -> Optional[float]:
+    """Return latest price for ``(venue, inst_id)`` using two-tier lookup.
+
+    Tier 1 — prices_v3 (preferred: mid > mark > last).
+    Tier 2 — pm_legs.current_price (fallback for venues not in prices_v3,
+              e.g. Felix equities before pull_felix_market.py runs).
 
     Args:
-        con: SQLite database connection
-        venue: Venue name
-        inst_id: Instrument ID
-
-    Returns:
-        Price or None if no data found
+        con:     SQLite connection.
+        venue:   Venue name (e.g. ``"felix"``, ``"hyperliquid"``).
+        inst_id: Instrument ID.
+        leg_id:  Optional leg PK — enables Tier 2 fallback.
     """
-    sql = """
-    SELECT mid, mark, last
-    FROM prices_v3
-    WHERE venue = ? AND inst_id = ?
-    ORDER BY ts DESC
-    LIMIT 1
-    """
-    cursor = con.execute(sql, (venue, inst_id))
-    row = cursor.fetchone()
-    if not row:
+    row = resolve_price(con, venue, inst_id, leg_id=leg_id)
+    if row is None:
         return None
-
-    mid, mark, last = row
-    # Prefer mid, then mark, then last
-    if mid is not None:
-        return float(mid)
-    if mark is not None:
-        return float(mark)
-    if last is not None:
-        return float(last)
+    for key in ("mid", "mark", "last"):
+        v = row.get(key)
+        if v is not None:
+            return float(v)
     return None
 
 
@@ -254,7 +244,7 @@ def compute_position_rollup(position: Dict[str, Any], leg_snapshots: Dict[str, D
                 venue = snapshot.get("venue") or leg.get("venue")
                 inst_id = snapshot.get("inst_id") or leg.get("inst_id")
                 if venue and inst_id:
-                    enriched_price = _enrich_leg_price_from_db(con, venue, inst_id)
+                    enriched_price = _enrich_leg_price_from_db(con, venue, inst_id, leg_id=leg_id)
                     if enriched_price is not None:
                         current_price = enriched_price
                         leg_result["enriched_from_db"] = True

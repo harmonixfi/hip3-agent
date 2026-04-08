@@ -36,6 +36,7 @@ _SCHEMA = """
         inst_id TEXT NOT NULL,
         side TEXT NOT NULL,
         size REAL NOT NULL,
+        current_price REAL,
         FOREIGN KEY (position_id) REFERENCES pm_positions(position_id)
     );
     CREATE TABLE pm_entry_prices (
@@ -112,11 +113,11 @@ def _seed_gold(con: sqlite3.Connection):
     )
     # Legs
     con.execute(
-        "INSERT INTO pm_legs VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size) VALUES (?, ?, ?, ?, ?, ?)",
         ("gold_spot", "pos_xyz_GOLD", "xyz_spot", "XAUT0/USDC", "LONG", 0.6608),
     )
     con.execute(
-        "INSERT INTO pm_legs VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size) VALUES (?, ?, ?, ?, ?, ?)",
         ("gold_perp", "pos_xyz_GOLD", "xyz", "xyz:GOLD", "SHORT", 0.6608),
     )
     # Entry prices: spot=3050, perp=3055
@@ -157,15 +158,15 @@ def _seed_hype(con: sqlite3.Connection):
     )
     # Legs
     con.execute(
-        "INSERT INTO pm_legs VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size) VALUES (?, ?, ?, ?, ?, ?)",
         ("hype_spot", "pos_hyna_HYPE", "xyz_spot", "HYPE/USDC", "LONG", 126.98),
     )
     con.execute(
-        "INSERT INTO pm_legs VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size) VALUES (?, ?, ?, ?, ?, ?)",
         ("hype_perp_hyna", "pos_hyna_HYPE", "hyna", "hyna:HYPE", "SHORT", 63.0),
     )
     con.execute(
-        "INSERT INTO pm_legs VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size) VALUES (?, ?, ?, ?, ?, ?)",
         ("hype_perp_native", "pos_hyna_HYPE", "hl", "HYPE", "SHORT", 63.98),
     )
     # Entry prices: spot=20.00, hyna=20.05, native=20.03
@@ -359,7 +360,6 @@ def test_missing_exit_price_partial():
 def test_felix_long_uses_pm_leg_mark_when_prices_v3_missing():
     """Felix equities often have no prices_v3 row; use pm_legs.current_price (spec §5.1)."""
     con = _make_db()
-    con.execute("ALTER TABLE pm_legs ADD COLUMN current_price REAL")
 
     con.execute(
         "INSERT INTO pm_positions VALUES (?, ?, ?, ?, ?, ?)",

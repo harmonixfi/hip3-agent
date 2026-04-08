@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 
 _LEGACY_ENV = {
@@ -148,3 +148,42 @@ def get_strategy_wallets(strategy_id: str) -> List[Dict[str, str]]:
                 if isinstance(w, dict) and w.get("label") and w.get("address")
             ]
     raise KeyError(f"strategy not found: {strategy_id}")
+
+
+def get_felix_wallet_address_from_env() -> Optional[str]:
+    """Return normalized lower-case Felix wallet from ``FELIX_WALLET_ADDRESS``, or None."""
+    raw = (os.environ.get("FELIX_WALLET_ADDRESS") or "").strip()
+    return raw.lower() if raw else None
+
+
+def get_delta_neutral_equity_account_ids() -> List[str]:
+    """Account ids used for delta-neutral equity (``pm_account_snapshots`` / DN totals).
+
+    Includes every non-empty ``address`` from ``get_strategy_wallets("delta_neutral")``,
+    plus ``FELIX_WALLET_ADDRESS`` (normalized lower-case) when set. De-duplicates by
+    lower-case so the same address is not double-counted across HL and Felix.
+    """
+    try:
+        dn = get_strategy_wallets("delta_neutral")
+    except KeyError:
+        dn = []
+
+    seen_lower: Set[str] = set()
+    out: List[str] = []
+
+    for w in dn:
+        a = (w.get("address") or "").strip()
+        if not a:
+            continue
+        key = a.lower()
+        if key in seen_lower:
+            continue
+        seen_lower.add(key)
+        out.append(a)
+
+    felix = get_felix_wallet_address_from_env()
+    if felix and felix not in seen_lower:
+        seen_lower.add(felix)
+        out.append(felix)
+
+    return out

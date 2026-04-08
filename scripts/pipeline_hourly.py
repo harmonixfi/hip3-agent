@@ -6,7 +6,8 @@ Orchestrates all computation steps in order:
 3. Compute entry prices (VWAP)
 4. Compute unrealized PnL (bid/ask)
 5. Compute entry/exit spreads
-6. Compute portfolio snapshot
+6. Compute portfolio snapshot (pm_portfolio_snapshots — health / PM overview)
+7. Vault snapshot (vault_snapshots + vault_strategy_snapshots — dashboard ``/api/vault/overview``)
 
 Errors in one step do not block subsequent steps.
 
@@ -114,6 +115,12 @@ def step_portfolio_snapshot(con: sqlite3.Connection) -> dict:
     return result
 
 
+def step_vault_snapshot(con: sqlite3.Connection) -> dict:
+    """Refresh vault_snapshots so the main dashboard (GET /api/vault/overview) updates."""
+    from tracking.vault.snapshot import run_daily_snapshot
+    return run_daily_snapshot(con)
+
+
 # ---------------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------------
@@ -123,8 +130,12 @@ def run_pipeline(
     db_path: Path = DEFAULT_DB,
     skip_ingest: bool = False,
     since_hours: int = DEFAULT_SINCE_HOURS,
+    skip_vault: bool = False,
 ) -> None:
-    _log("orchestrator", f"starting pipeline (skip_ingest={skip_ingest}, since_hours={since_hours})")
+    _log(
+        "orchestrator",
+        f"starting pipeline (skip_ingest={skip_ingest}, since_hours={since_hours}, skip_vault={skip_vault})",
+    )
 
     con = sqlite3.connect(str(db_path), timeout=60)
     con.execute("PRAGMA journal_mode=WAL")
@@ -159,6 +170,12 @@ def run_pipeline(
     # Step 6: Portfolio snapshot
     _run_step("portfolio_snapshot", step_portfolio_snapshot, con)
 
+    # Step 7: Vault overview (dashboard total equity / strategy weights / as_of)
+    if skip_vault:
+        _log("vault_snapshot", "SKIPPED (--skip-vault flag)")
+    else:
+        _run_step("vault_snapshot", step_vault_snapshot, con)
+
     con.close()
     _log("orchestrator", "pipeline complete")
 
@@ -190,12 +207,19 @@ def main() -> None:
         help=f"Fill lookback window in hours when forcing since_ms (default: {DEFAULT_SINCE_HOURS} = 21 days). "
              "Only applies when not using watermark-based ingestion.",
     )
+    parser.add_argument(
+        "--skip-vault",
+        action="store_true",
+        default=False,
+        help="Skip vault_snapshots refresh (GET /api/vault/overview will stay stale until scripts/vault_daily_snapshot.py)",
+    )
     args = parser.parse_args()
 
     run_pipeline(
         db_path=args.db,
         skip_ingest=args.skip_ingest,
         since_hours=args.since_hours,
+        skip_vault=args.skip_vault,
     )
 
 

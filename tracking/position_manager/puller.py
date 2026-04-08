@@ -7,6 +7,7 @@ and position data from venue private APIs, and writes snapshots to the database.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import time
@@ -20,6 +21,12 @@ from ..connectors.hyena_private import HyenaPrivateConnector
 from ..connectors.ethereal_private import EtherealPrivateConnector
 from ..connectors.lighter_private import LighterPrivateConnector
 from ..connectors.okx_private import OKXPrivateConnector
+from ..connectors.felix_private import (
+    FELIX_PROXY_BASE,
+    FelixPrivateConnector,
+    felix_operator_hint_for_error_message,
+    recompute_felix_account_total_usd,
+)
 
 # Registry imports
 from .registry import load_registry
@@ -48,6 +55,79 @@ def _load_equity_config() -> dict:
     return _EQUITY_CONFIG
 
 
+_FELIX_HL_MARK_PATH = ROOT.parent / "config" / "felix_hl_mark_sources.json"
+_FELIX_HL_MARK_SOURCES: Optional[Dict[str, Dict[str, str]]] = None
+
+
+def _load_felix_hl_mark_sources() -> Dict[str, Dict[str, str]]:
+    """Felix inst_id (e.g. MUon/USDC) -> HL prices_v3 (venue, inst_id) for MTM on account total."""
+    global _FELIX_HL_MARK_SOURCES
+    if _FELIX_HL_MARK_SOURCES is not None:
+        return _FELIX_HL_MARK_SOURCES
+    _FELIX_HL_MARK_SOURCES = {}
+    try:
+        with open(_FELIX_HL_MARK_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(v, dict) and v.get("venue") and v.get("inst_id"):
+                    _FELIX_HL_MARK_SOURCES[str(k)] = {
+                        "venue": str(v["venue"]),
+                        "inst_id": str(v["inst_id"]),
+                    }
+    except (OSError, json.JSONDecodeError):
+        pass
+    return _FELIX_HL_MARK_SOURCES
+
+
+def _mid_price_from_prices_v3(
+    con: sqlite3.Connection, venue: str, inst_id: str
+) -> Optional[float]:
+    row = con.execute(
+        """
+        SELECT bid, ask, mid, last FROM prices_v3
+        WHERE venue = ? AND inst_id = ?
+        ORDER BY ts DESC LIMIT 1
+        """,
+        (venue, inst_id),
+    ).fetchone()
+    if not row:
+        return None
+    bid, ask, mid, last = row[0], row[1], row[2], row[3]
+    if mid is not None:
+        return float(mid)
+    if bid is not None and ask is not None:
+        return (float(bid) + float(ask)) / 2.0
+    if last is not None:
+        return float(last)
+    if bid is not None:
+        return float(bid)
+    if ask is not None:
+        return float(ask)
+    return None
+
+
+def _hl_mtm_marks_for_felix_positions(
+    con: sqlite3.Connection, positions: List[Dict]
+) -> Dict[str, float]:
+    """Map Felix ``inst_id`` -> HL mid when ``felix_hl_mark_sources.json`` lists a hedge coin."""
+    src = _load_felix_hl_mark_sources()
+    if not src:
+        return {}
+    out: Dict[str, float] = {}
+    for p in positions:
+        fi = (p.get("inst_id") or "").strip()
+        if not fi or fi in out:
+            continue
+        meta = src.get(fi)
+        if not meta:
+            continue
+        px = _mid_price_from_prices_v3(con, meta["venue"], meta["inst_id"])
+        if px is not None:
+            out[fi] = px
+    return out
+
+
 # Venue -> connector class mapping
 CONNECTORS = {
     "paradex": ParadexPrivateConnector,
@@ -56,6 +136,7 @@ CONNECTORS = {
     "ethereal": EtherealPrivateConnector,
     "lighter": LighterPrivateConnector,
     "okx": OKXPrivateConnector,
+    "felix": FelixPrivateConnector,
 }
 
 
@@ -207,7 +288,13 @@ def pull_venue_positions(venue: str, **connector_kwargs) -> Dict:
                 snapshot_kwargs["exclude_spot_tokens"] = exclude_tokens
 
         account_snapshot = connector.fetch_account_snapshot(**snapshot_kwargs)
-        positions = connector.fetch_open_positions()
+        pos_kwargs: dict = {}
+        if venue == "hyperliquid":
+            eq_cfg = _load_equity_config()
+            bd = eq_cfg.get("builder_dexes", [])
+            if bd:
+                pos_kwargs["builder_dexes"] = bd
+        positions = connector.fetch_open_positions(**pos_kwargs)
 
         return {
             "success": True,
@@ -314,6 +401,64 @@ def write_leg_snapshots(con: sqlite3.Connection, venue: str, positions: List[Dic
             pass
 
 
+def _verbose_log_account_snapshot(venue: str, snapshot: Dict, account_id_hint: str) -> None:
+    """Log account-level totals from a snapshot (no raw_json / secrets)."""
+    if not snapshot:
+        return
+    aid = snapshot.get("account_id") or account_id_hint
+    parts = [f"venue={venue}", f"account_id={aid}"]
+    tb = snapshot.get("total_balance")
+    if tb is not None:
+        parts.append(f"total_balance={tb}")
+    ab = snapshot.get("available_balance")
+    if ab is not None:
+        parts.append(f"available_balance={ab}")
+    upnl = snapshot.get("unrealized_pnl")
+    if upnl is not None:
+        parts.append(f"account_uPnL={upnl}")
+    print(f"    Account: {' | '.join(parts)}")
+
+
+def _verbose_log_mapped_legs(
+    venue: str,
+    mapped: List[Dict],
+    *,
+    wallet_label: Optional[str] = None,
+) -> None:
+    """Log each matched registry leg and best-effort mark/entry/PnL (no secrets)."""
+    if not mapped:
+        return
+    wl = f" wallet={wallet_label}" if wallet_label else ""
+    print(f"    Matched legs ({venue}){wl}: {len(mapped)}")
+    for m in mapped:
+        leg_id = m.get("leg_id") or "?"
+        pid = m.get("position_id") or "?"
+        inst = m.get("inst_id") or "?"
+        side = m.get("side") or "?"
+        parts = [
+            f"leg_id={leg_id}",
+            f"position_id={pid}",
+            f"{inst}",
+            side,
+        ]
+        sz = m.get("size")
+        if sz is not None:
+            parts.append(f"size={sz}")
+        cur = m.get("current_price")
+        if cur is not None:
+            parts.append(f"mark={cur}")
+        entry = m.get("entry_price")
+        if entry is not None:
+            parts.append(f"entry={entry}")
+        upnl = m.get("unrealized_pnl")
+        if upnl is not None:
+            parts.append(f"uPnL={upnl}")
+        rp = m.get("realized_pnl")
+        if rp is not None:
+            parts.append(f"rPnL={rp}")
+        print(f"      {' | '.join(parts)}")
+
+
 def run_pull(
     db_path: Path,
     registry_path: Optional[Path] = None,
@@ -381,6 +526,11 @@ def run_pull(
     if venues_set:
         venues_to_pull = venues_to_pull.union(venues_set)
 
+    _felix_jwt = (os.environ.get("FELIX_EQUITIES_JWT") or "").strip()
+    _felix_wallet = (os.environ.get("FELIX_WALLET_ADDRESS") or "").strip()
+    if _felix_jwt and _felix_wallet:
+        venues_to_pull.add("felix")
+
     if verbose:
         print(f"Venues to pull from: {sorted(venues_to_pull)}")
 
@@ -402,6 +552,149 @@ def run_pull(
     for venue in sorted(venues_to_pull):
         if verbose:
             print(f"  Pulling from {venue}...")
+
+        if venue == "felix":
+            jwt = (os.environ.get("FELIX_EQUITIES_JWT") or "").strip()
+            wallet_raw = (os.environ.get("FELIX_WALLET_ADDRESS") or "").strip()
+            if not jwt or not wallet_raw:
+                if verbose:
+                    print(
+                        "  SKIPPED felix (missing FELIX_EQUITIES_JWT or FELIX_WALLET_ADDRESS)"
+                    )
+                summary["venues_skipped"].append("felix")
+                continue
+
+            wallet_norm = wallet_raw.lower()
+            api_raw = (os.environ.get("FELIX_API_ACCOUNT_ADDRESS") or "").strip()
+            api_norm = api_raw.lower() if api_raw else wallet_norm
+            if verbose:
+                if api_norm != wallet_norm:
+                    print(
+                        f"    GET {FELIX_PROXY_BASE}/v1/portfolio/{api_norm} "
+                        f"(ledger account_id {wallet_norm})"
+                    )
+                else:
+                    print(f"    GET {FELIX_PROXY_BASE}/v1/portfolio/{wallet_norm}")
+            felix_kw = {"jwt": jwt, "wallet_address": wallet_norm}
+            if api_raw:
+                felix_kw["api_account_address"] = api_norm
+            result = pull_venue_positions("felix", **felix_kw)
+            venue_mapped_total: List = []
+            venue_had_failure = False
+
+            if not result["success"]:
+                error_msg = result.get("error", "")
+                error_lower = error_msg.lower()
+                if (
+                    "no connector available" in error_lower
+                    or "credentials missing" in error_lower
+                    or "felix jwt is required" in error_lower
+                    or "felix wallet address is required" in error_lower
+                    or "config missing" in error_lower
+                ):
+                    if verbose:
+                        print(f"SKIPPED ({error_msg})")
+                    summary["venues_skipped"].append("felix")
+                else:
+                    venue_had_failure = True
+                    summary["venues_failed"].append("felix")
+                    summary["errors"].append(f"felix: {error_msg}")
+                    summary["success"] = False
+                    if verbose:
+                        print(f"FAILED ({error_msg})")
+                        _hint = felix_operator_hint_for_error_message(error_msg)
+                        if _hint and "Hint:" not in error_msg:
+                            print(f"  {_hint}")
+            else:
+                try:
+                    account_id = wallet_norm
+                    snap = result["account_snapshot"] or {}
+                    if snap.get("account_id"):
+                        account_id = snap["account_id"]
+
+                    felix_positions = result.get("positions") or []
+                    if felix_positions:
+                        raw_j = (snap.get("raw_json") if isinstance(snap, dict) else None) or {}
+                        hl_mtm = _hl_mtm_marks_for_felix_positions(con, felix_positions)
+                        new_tb = recompute_felix_account_total_usd(
+                            raw_j,
+                            felix_positions,
+                            hl_marks_by_felix_inst_id=hl_mtm if hl_mtm else None,
+                        )
+                        if new_tb is not None:
+                            snap = {**snap, "total_balance": new_tb}
+                            result["account_snapshot"] = snap
+
+                    if result["account_snapshot"]:
+                        write_account_snapshot(con, venue, result["account_snapshot"], ts_ms)
+                        summary["snapshots_written"] += 1
+                        if verbose:
+                            _verbose_log_account_snapshot(
+                                venue, result["account_snapshot"], account_id
+                            )
+
+                    mapped: List[Dict] = []
+                    if result["positions"]:
+                        venue_positions = result["positions"]
+                        managed_legs = []
+                        for mp in positions:
+                            for leg in mp.get("legs", []):
+                                if leg.get("venue") == venue:
+                                    managed_legs.append({
+                                        "position_id": mp.get("position_id"),
+                                        "leg_id": leg.get("leg_id"),
+                                        "inst_id": leg.get("inst_id"),
+                                        "side": (leg.get("side") or "").upper(),
+                                    })
+
+                        idx = {}
+                        for vp in venue_positions:
+                            key = ((vp.get("inst_id") or ""), (vp.get("side") or "").upper())
+                            idx.setdefault(key, vp)
+
+                        for ml in managed_legs:
+                            key = (ml.get("inst_id") or "", ml.get("side") or "")
+                            vp = idx.get(key)
+                            if not vp:
+                                continue
+                            mapped.append({
+                                "leg_id": ml["leg_id"],
+                                "position_id": ml["position_id"],
+                                "inst_id": vp.get("inst_id"),
+                                "side": (vp.get("side") or "").upper(),
+                                "size": vp.get("size"),
+                                "entry_price": vp.get("entry_price"),
+                                "current_price": vp.get("current_price"),
+                                "unrealized_pnl": vp.get("unrealized_pnl"),
+                                "realized_pnl": vp.get("realized_pnl"),
+                                "raw_json": vp.get("raw_json", {}),
+                                "account_id": account_id,
+                            })
+
+                        if mapped:
+                            if verbose:
+                                _verbose_log_mapped_legs(venue, mapped)
+                            write_leg_snapshots(con, venue, mapped, ts_ms)
+                            summary["snapshots_written"] += len(mapped)
+
+                    venue_mapped_total.extend(mapped)
+
+                except sqlite3.IntegrityError as e:
+                    venue_had_failure = True
+                    summary["venues_failed"].append("felix")
+                    summary["errors"].append(f"DB integrity error: {e}")
+                    summary["success"] = False
+                    if verbose:
+                        print(f"FAILED (DB integrity error: {e})")
+
+            con.commit()
+
+            if not venue_had_failure and venue not in summary["venues_skipped"]:
+                summary["venues_pulled"].append(venue)
+                if verbose:
+                    total = len(venue_mapped_total)
+                    print(f"  felix: OK ({total} managed legs)")
+            continue
 
         accounts = resolve_venue_accounts(venue)
         if not accounts:
@@ -447,6 +740,10 @@ def run_pull(
                 if result["account_snapshot"]:
                     write_account_snapshot(con, venue, result["account_snapshot"], ts_ms)
                     summary["snapshots_written"] += 1
+                    if verbose:
+                        _verbose_log_account_snapshot(
+                            venue, result["account_snapshot"], account_id
+                        )
 
                 mapped = []
                 if result["positions"]:
@@ -488,6 +785,12 @@ def run_pull(
                         })
 
                     if mapped:
+                        if verbose:
+                            _verbose_log_mapped_legs(
+                                venue,
+                                mapped,
+                                wallet_label=wallet_label if len(accounts) > 1 else None,
+                            )
                         write_leg_snapshots(con, venue, mapped, ts_ms)
                         summary["snapshots_written"] += len(mapped)
 

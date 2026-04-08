@@ -356,6 +356,54 @@ def test_missing_exit_price_partial():
     print("PASS test_missing_exit_price_partial")
 
 
+def test_felix_long_uses_pm_leg_mark_when_prices_v3_missing():
+    """Felix equities often have no prices_v3 row; use pm_legs.current_price (spec §5.1)."""
+    con = _make_db()
+    con.execute("ALTER TABLE pm_legs ADD COLUMN current_price REAL")
+
+    con.execute(
+        "INSERT INTO pm_positions VALUES (?, ?, ?, ?, ?, ?)",
+        ("pos_felix_dn", "multi", "funding_arb", "OPEN", 1000, 1000),
+    )
+    con.execute(
+        "INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size) VALUES (?, ?, ?, ?, ?, ?)",
+        ("leg_felix_mstr", "pos_felix_dn", "felix", "MSTR/USDC", "LONG", 1.0),
+    )
+    con.execute(
+        "INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size) VALUES (?, ?, ?, ?, ?, ?)",
+        ("leg_hl_mstr", "pos_felix_dn", "hl", "MSTR", "SHORT", 1.0),
+    )
+    con.execute("UPDATE pm_legs SET current_price = ? WHERE leg_id = ?", (300.0, "leg_felix_mstr"))
+    con.execute(
+        "INSERT INTO pm_entry_prices (leg_id, position_id, avg_entry_price) VALUES (?, ?, ?)",
+        ("leg_felix_mstr", "pos_felix_dn", 290.0),
+    )
+    con.execute(
+        "INSERT INTO pm_entry_prices (leg_id, position_id, avg_entry_price) VALUES (?, ?, ?)",
+        ("leg_hl_mstr", "pos_felix_dn", 291.0),
+    )
+    con.execute(
+        "INSERT INTO instruments_v3 (venue, inst_id) VALUES (?, ?)",
+        ("hl", "MSTR"),
+    )
+    con.execute(
+        "INSERT INTO prices_v3 (venue, inst_id, ts, bid, ask, last, mid) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("hl", "MSTR", 1000, 289.0, 292.0, 290.5, 290.5),
+    )
+    con.commit()
+
+    results = compute_spreads(con)
+    assert len(results) == 1
+    r = results[0]
+    assert r["long_leg_id"] == "leg_felix_mstr"
+    assert r["short_leg_id"] == "leg_hl_mstr"
+    # long exit from leg mark 300; short ask 292
+    expected_exit = exit_spread(300.0, 292.0)
+    assert r["exit_spread"] is not None
+    assert abs(r["exit_spread"] - expected_exit) < 1e-9
+    print("PASS test_felix_long_uses_pm_leg_mark_when_prices_v3_missing")
+
+
 def test_recompute_overwrites():
     """Running compute_spreads twice does not duplicate rows; values are updated."""
     con = _make_db()
@@ -408,6 +456,7 @@ def main() -> int:
         test_split_leg_generates_two_sub_pairs,
         test_missing_entry_price_skips,
         test_missing_exit_price_partial,
+        test_felix_long_uses_pm_leg_mark_when_prices_v3_missing,
         test_recompute_overwrites,
     ]
 

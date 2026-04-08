@@ -103,3 +103,56 @@ def test_equity_written_for_wallet_with_no_managed_legs():
     assert "0xALTADDRESS" in account_ids, f"alt wallet equity not written — got {account_ids}"
     for account_id, balance in rows:
         assert balance == 12345.67, f"Wrong balance for {account_id}: {balance}"
+
+
+def test_felix_snapshot_written_when_env_configured(monkeypatch):
+    """Felix venue pull uses FELIX_* env (not strategies.json) and writes pm_account_snapshots."""
+    con = _make_db()
+    monkeypatch.setenv("FELIX_EQUITIES_JWT", "test-jwt")
+    monkeypatch.setenv("FELIX_WALLET_ADDRESS", "0xFelixAddr")
+
+    with patch("tracking.position_manager.puller.resolve_venue_accounts", return_value={}), \
+         patch("tracking.position_manager.puller.pull_venue_positions") as mock_pull, \
+         patch("tracking.position_manager.puller.load_positions_from_db", return_value=[]), \
+         patch("tracking.position_manager.puller.ensure_multi_wallet_columns"):
+
+        def side_effect(venue, **kwargs):
+            if venue == "felix":
+                return {
+                    "success": True,
+                    "account_snapshot": {
+                        "account_id": "0xfelixaddr",
+                        "total_balance": 42.0,
+                        "available_balance": 40.0,
+                        "margin_balance": 42.0,
+                        "unrealized_pnl": None,
+                        "position_value": None,
+                        "raw_json": {},
+                    },
+                    "positions": [],
+                    "error": None,
+                }
+            return {
+                "success": True,
+                "account_snapshot": _fake_snapshot(kwargs.get("address", "")),
+                "positions": [],
+                "error": None,
+            }
+
+        mock_pull.side_effect = side_effect
+
+        run_pull(
+            db_path=Path(":memory:"),
+            registry_path=None,
+            venues_filter=None,
+            verbose=False,
+            _con_override=con,
+        )
+
+    rows = con.execute(
+        "SELECT venue, account_id, total_balance FROM pm_account_snapshots"
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0][0] == "felix"
+    assert rows[0][1] == "0xfelixaddr"
+    assert rows[0][2] == 42.0

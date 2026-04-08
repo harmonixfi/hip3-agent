@@ -19,6 +19,7 @@
       "status": "ACTIVE",
       "wallets": [
         {"label": "alt",  "venue": "hyperliquid", "address": "0x3c2c0B452B465c595fE106Ef40c55Bf4383D2453"},
+        {"label": "commodity", "venue": "hyperliquid", "address": "0xd4737Ef74fC7bB5932cE917cF51B2E1A0263210a"},
         {"label": "main", "venue": "hyperliquid", "address": "0x4Fde618c143640638433a1f00431C6B49bb08322"}
       ],
       "target_weight_pct": 45.0,

@@ -16,6 +16,16 @@ export ETHEREAL_SUBACCOUNT_ID=""
 export HYPERLIQUID_ADDRESS=""
 export LIGHTER_L1_ADDRESS=""
 
+# --- Felix equities (optional — delta-neutral equity snapshots in pm_account_snapshots) ---
+# FELIX_EQUITIES_JWT is short-lived; rotate manually in `.arbit_env` when requests return 401.
+# FELIX_WALLET_ADDRESS — ledger address for pm_account_snapshots / DN equity (your primary id).
+# FELIX_API_ACCOUNT_ADDRESS — optional. If the proxy only authorizes GET /v1/portfolio/{id} for a
+# different id than FELIX_WALLET_ADDRESS (same user, two chain identities), set this to that id.
+# Requests use FELIX_API_ACCOUNT_ADDRESS in the URL; snapshots still use FELIX_WALLET_ADDRESS as account_id.
+# export FELIX_WALLET_ADDRESS="0xYourLedgerWallet"
+# export FELIX_API_ACCOUNT_ADDRESS="0xFelixPathWallet"
+# export FELIX_EQUITIES_JWT="your_bearer_jwt"
+
 # --- Harmonix NAV Postgres (optional — vault lending equity) ---
 # Uncomment and set `HARMONIX_NAV_DB_URL` to enable `LendingProvider`.
 # Reference: `tracking/vault/providers/lending.py`

@@ -6,7 +6,7 @@ Functions: get_instruments, get_spot_instruments, get_funding, get_mark_prices, 
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import urllib.request
 import urllib.parse
 import json
@@ -15,7 +15,7 @@ import json
 BASE_URL = "https://api.hyperliquid.xyz"
 
 
-def _get(path: str, params: Optional[Dict[str, str]] = None) -> dict:
+def _get(path: str, params: Optional[Dict[str, Any]] = None) -> dict:
     """Make POST request to Hyperliquid API (Hyperliquid uses POST for all requests)."""
     url = BASE_URL + path
     payload = json.dumps(params or {})
@@ -34,28 +34,48 @@ def _get(path: str, params: Optional[Dict[str, str]] = None) -> dict:
         return json.loads(raw)
 
 
-def get_instruments() -> List[Dict[str, str]]:
-    """Get list of perp instruments using /info endpoint with type=meta."""
-    # Hyperliquid uses {type: "meta"} to get market metadata
-    data = _get("/info", {"type": "meta"})
+def _perp_instruments_from_meta(dex: str = "") -> List[Dict[str, str]]:
+    """Perp universe for one builder DEX. dex '' = first/native perp DEX."""
+    payload: Dict[str, Any] = {"type": "meta"}
+    if dex:
+        payload["dex"] = dex
+    data = _get("/info", payload)
     universe = data.get("universe", [])
 
     instruments = []
     for mkt in universe:
-        # Filter out delisted markets
         if mkt.get("isDelisted"):
             continue
-
+        name = mkt.get("name")
+        if not name:
+            continue
         instruments.append({
-            "symbol": mkt.get("name"),
-            "base": mkt.get("name"),  # Hyperliquid uses the same name for base
-            "quote": "USD",  # Hyperliquid is USD-denominated
+            "symbol": name,
+            "base": name,
+            "quote": "USD",
             "type": "PERP",
             "szDecimals": mkt.get("szDecimals", 0),
             "maxLeverage": mkt.get("maxLeverage", 0),
         })
-
     return instruments
+
+
+# HIP-3 builder-deployed perps (e.g. xyz:MU) live on a separate perp DEX from core markets.
+_EXTRA_PERP_DEXES_FOR_META_AND_MIDS: tuple[str, ...] = ("xyz",)
+
+
+def get_instruments() -> List[Dict[str, str]]:
+    """Get list of perp instruments: native/first DEX plus HIP-3 DEXes (e.g. xyz:*)."""
+    merged: List[Dict[str, str]] = []
+    seen: set[str] = set()
+    for dex in ("",) + _EXTRA_PERP_DEXES_FOR_META_AND_MIDS:
+        for row in _perp_instruments_from_meta(dex):
+            sym = row.get("symbol")
+            if not sym or sym in seen:
+                continue
+            seen.add(sym)
+            merged.append(row)
+    return merged
 
 
 _TRAILING_DIGITS_RE = re.compile(r"^([A-Z]{2,})(\d+)$")
@@ -152,18 +172,20 @@ def get_funding() -> Dict[str, float]:
 
 
 def get_mark_prices() -> Dict[str, Dict[str, float]]:
-    """Get mark prices for all perps using /info endpoint with type=allMids."""
-    data = _get("/info", {"type": "allMids"})
-
-    result = {}
-    for symbol, price_str in data.items():
-        try:
-            result[symbol] = {
-                "midPrice": float(price_str),
-            }
-        except (ValueError, TypeError):
+    """Mid prices for perps: first DEX + HIP-3 DEXes (must pass dex or xyz:* keys are missing)."""
+    result: Dict[str, Dict[str, float]] = {}
+    for dex in ("",) + _EXTRA_PERP_DEXES_FOR_META_AND_MIDS:
+        payload: Dict[str, Any] = {"type": "allMids"}
+        if dex:
+            payload["dex"] = dex
+        data = _get("/info", payload)
+        if not isinstance(data, dict):
             continue
-
+        for symbol, price_str in data.items():
+            try:
+                result[symbol] = {"midPrice": float(price_str)}
+            except (ValueError, TypeError):
+                continue
     return result
 
 

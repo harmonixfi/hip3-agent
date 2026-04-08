@@ -48,16 +48,30 @@ def _fetch_latest_price(
     con: sqlite3.Connection,
     venue: str,
     inst_id: str,
+    *,
+    leg_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Fetch latest price row for (venue, inst_id) from prices_v3."""
+    """Fetch latest price row for (venue, inst_id) from prices_v3.
+
+    For ``venue=felix``, if there is no ``prices_v3`` row (equities often absent),
+    fall back to ``pm_legs.current_price`` from the position puller (registry match).
+    """
     row = con.execute(
         "SELECT bid, ask, mid, last, ts FROM prices_v3"
         " WHERE venue = ? AND inst_id = ? ORDER BY ts DESC LIMIT 1",
         (venue, inst_id),
     ).fetchone()
-    if row is None:
-        return None
-    return {"bid": row[0], "ask": row[1], "mid": row[2], "last": row[3], "ts": row[4]}
+    if row is not None:
+        return {"bid": row[0], "ask": row[1], "mid": row[2], "last": row[3], "ts": row[4]}
+    if venue == "felix" and leg_id:
+        lr = con.execute(
+            "SELECT current_price FROM pm_legs WHERE leg_id = ? AND venue = 'felix'",
+            (leg_id,),
+        ).fetchone()
+        if lr and lr[0] is not None:
+            m = float(lr[0])
+            return {"bid": m, "ask": m, "mid": m, "last": m, "ts": 0}
+    return None
 
 
 def _get_exit_bid(price_row: Dict[str, Any]) -> Optional[float]:
@@ -146,7 +160,12 @@ def compute_spreads(
 
         for long_leg in long_legs:
             # Fetch LONG exit bid once per long leg
-            long_price_row = _fetch_latest_price(con, long_leg["venue"], long_leg["inst_id"])
+            long_price_row = _fetch_latest_price(
+                con,
+                long_leg["venue"],
+                long_leg["inst_id"],
+                leg_id=long_leg["leg_id"],
+            )
             long_exit_bid = _get_exit_bid(long_price_row) if long_price_row else None
 
             for short_leg in short_legs:
@@ -163,7 +182,10 @@ def compute_spreads(
                 short_exit_price: Optional[float] = None
 
                 short_price_row = _fetch_latest_price(
-                    con, short_leg["venue"], short_leg["inst_id"]
+                    con,
+                    short_leg["venue"],
+                    short_leg["inst_id"],
+                    leg_id=short_leg["leg_id"],
                 )
                 short_exit_ask = _get_exit_ask(short_price_row) if short_price_row else None
                 short_exit_price = short_exit_ask

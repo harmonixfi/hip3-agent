@@ -113,11 +113,20 @@
     "status": "OPEN",
     "legs": [
       {
+        "leg_id": "pos_xyz_MU_FELIX",
+        "venue": "felix",
+        "inst_id": "MUon/USDC",
+        "side": "LONG",
+        "qty": 13.191550167850779,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      },
+      {
         "leg_id": "pos_xyz_MU_PERP",
         "venue": "hyperliquid",
         "inst_id": "xyz:MU",
         "side": "SHORT",
-        "qty": 13.205,
+        "qty": 13.191550167850779,
         "qty_type": "token",
         "wallet_label": "alt"
       }
@@ -155,6 +164,15 @@
     "base": "MSTR",
     "status": "OPEN",
     "legs": [
+      {
+        "leg_id": "pos_xyz_MSTR_FELIX",
+        "venue": "felix",
+        "inst_id": "MSTRon/USDC",
+        "side": "LONG",
+        "qty": 39.082,
+        "qty_type": "token",
+        "wallet_label": "alt"
+      },
       {
         "leg_id": "pos_xyz_MSTR_PERP",
         "venue": "hyperliquid",
@@ -298,6 +316,33 @@
         "qty": 224.0,
         "qty_type": "token",
         "wallet_label": "alt"
+      }
+    ]
+  },
+  {
+    "position_id": "pos_commodity_OIL_BRENTOIL",
+    "strategy_type": "SPOT_PERP",
+    "base": "OIL_BRENTOIL",
+    "status": "OPEN",
+    "amount_usd": 9445.47,
+    "legs": [
+      {
+        "leg_id": "pos_commodity_OIL_FLX",
+        "venue": "hyperliquid",
+        "inst_id": "flx:OIL",
+        "side": "LONG",
+        "qty": 52.452,
+        "qty_type": "token",
+        "wallet_label": "commodity"
+      },
+      {
+        "leg_id": "pos_commodity_BRENTOIL_XYZ",
+        "venue": "hyperliquid",
+        "inst_id": "xyz:BRENTOIL",
+        "side": "LONG",
+        "qty": 50.35,
+        "qty_type": "token",
+        "wallet_label": "commodity"
       }
     ]
   }

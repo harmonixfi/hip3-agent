@@ -12,6 +12,7 @@ Minimal ingestion runner for V3-032.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -23,21 +24,80 @@ from tracking.connectors import hyperliquid_public
 from tracking.writers.hyperliquid_v3_writer import connect, upsert_instruments, upsert_spot_instruments, insert_prices, insert_funding
 
 DEFAULT_DB = ROOT / "tracking" / "db" / "arbit_v3.db"
+FELIX_HL_MARK_SOURCES = ROOT / "config" / "felix_hl_mark_sources.json"
+
+
+def _felix_hyperliquid_inst_ids() -> set[str]:
+    """inst_id values we must always have in instruments_v3/prices_v3 for Felix DN marks."""
+    try:
+        with open(FELIX_HL_MARK_SOURCES, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return set()
+    out: set[str] = set()
+    for v in data.values():
+        if isinstance(v, dict) and v.get("venue") == "hyperliquid":
+            iid = v.get("inst_id")
+            if iid:
+                out.add(str(iid))
+    return out
+
+
+def _log_felix_marks(
+    felix_ids: set[str],
+    price_rows: list[dict],
+    mark_prices: dict,
+    by_sym: dict[str, dict],
+    ts_ms: int,
+) -> None:
+    """Stdout lines so you can confirm Felix hedge symbols got a sane HL mid."""
+    if not felix_ids:
+        return
+    by_inst = {r["instId"]: r for r in price_rows}
+    print(f"Felix HL marks (felix_hl_mark_sources.json)  ts_ms={ts_ms}")
+    for iid in sorted(felix_ids):
+        row = by_inst.get(iid)
+        if row is not None and row.get("mid") is not None:
+            print(f"  OK   {iid}  mid={row['mid']:.6g}  -> prices_v3")
+        elif iid not in mark_prices:
+            print(f"  WARN {iid}  not in allMids response — cannot price")
+        elif iid not in by_sym:
+            print(f"  WARN {iid}  not in perp meta universe — check symbol vs HL")
+        else:
+            print(f"  WARN {iid}  in meta+allMids but no price row (bug?)")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", type=Path, default=DEFAULT_DB)
-    ap.add_argument("--inst-limit", type=int, default=50)
+    ap.add_argument(
+        "--inst-limit",
+        type=int,
+        default=50,
+        help="Max perp instruments to upsert (0 = all). Felix-mapped HL symbols are always merged in.",
+    )
     ap.add_argument("--funding-limit", type=int, default=50)
     args = ap.parse_args()
 
     ts = int(time.time() * 1000)
+    felix_inst_ids = _felix_hyperliquid_inst_ids()
 
     # Get perp instruments
     all_insts = hyperliquid_public.get_instruments()
-    # Limit to avoid timeout
-    insts = all_insts[:args.inst_limit] if args.inst_limit > 0 else all_insts
+    # Limit to avoid timeout; 0 means no cap
+    insts = all_insts[: args.inst_limit] if args.inst_limit > 0 else all_insts
+
+    # HIP-3 perps (xyz:*) are merged via get_instruments(); still merge felix map in case of cap order
+    # but Felix mark enrichment needs prices_v3 rows. Merge mapped symbols from full universe.
+    by_sym = {i["symbol"]: i for i in all_insts}
+    seen_syms = {i["symbol"] for i in insts}
+    for sym in sorted(felix_inst_ids):
+        if sym in seen_syms:
+            continue
+        extra = by_sym.get(sym)
+        if extra:
+            insts.append(extra)
+            seen_syms.add(sym)
 
     # Get spot instruments
     spot_insts = hyperliquid_public.get_spot_instruments()
@@ -116,7 +176,12 @@ def main() -> int:
         n_funding = insert_funding(con, funding_rows)
         con.commit()
 
-        print(f"Hyperliquid v3: {n_inst} perp instruments, {n_spot} spot instruments, {n_price} prices, {n_funding} funding records")
+        print(
+            f"Hyperliquid v3: {n_inst} perp instruments, {n_spot} spot instruments, "
+            f"{n_price} prices, {n_funding} funding records",
+            flush=True,
+        )
+        _log_felix_marks(felix_inst_ids, price_rows, mark_prices, by_sym, ts)
         return 0
     except Exception as e:
         con.rollback()

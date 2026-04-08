@@ -194,3 +194,26 @@ def test_get_strategy_wallets_filters_malformed_entries(tmp_path, monkeypatch):
     assert len(result) == 1
     assert result[0]["label"] == "good"
     assert result[0]["address"] == "0xGOOD"
+
+
+def test_get_felix_wallet_address_from_env_normalizes(tmp_strategies, monkeypatch):
+    monkeypatch.setenv("FELIX_WALLET_ADDRESS", "0xAbC")
+    assert accounts_mod.get_felix_wallet_address_from_env() == "0xabc"
+    monkeypatch.delenv("FELIX_WALLET_ADDRESS", raising=False)
+    assert accounts_mod.get_felix_wallet_address_from_env() is None
+
+
+def test_get_delta_neutral_equity_account_ids_merges_felix(tmp_strategies, monkeypatch):
+    monkeypatch.setenv("FELIX_WALLET_ADDRESS", "0xFELIX")
+    ids = accounts_mod.get_delta_neutral_equity_account_ids()
+    assert "0xALT" in ids
+    assert "0xMAIN" in ids
+    assert "0xfelix" in ids
+
+
+def test_get_delta_neutral_equity_account_ids_dedupes_felix_with_strategy_wallet(
+    tmp_strategies, monkeypatch,
+):
+    monkeypatch.setenv("FELIX_WALLET_ADDRESS", "0xALT")
+    ids = accounts_mod.get_delta_neutral_equity_account_ids()
+    assert ids == ["0xALT", "0xMAIN"]

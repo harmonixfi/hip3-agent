@@ -117,3 +117,23 @@ def test_get_total_equity_returns_zero_when_no_dn_wallets_in_db(tmp_strategies):
 
     assert result["total_equity_usd"] == 0.0
     assert result["equity_by_account"] == {}
+
+
+def test_get_total_equity_includes_felix_when_env_configured(tmp_strategies, monkeypatch):
+    """FELIX_WALLET_ADDRESS (env-only) must be included in DN equity totals."""
+    monkeypatch.setenv("FELIX_WALLET_ADDRESS", "0xFELIX")
+    con = _make_db()
+    con.executemany(
+        "INSERT INTO pm_account_snapshots(venue, account_id, ts, total_balance) VALUES (?, ?, ?, ?)",
+        [
+            ("hyperliquid", "0xALT", 1000, 50000.0),
+            ("hyperliquid", "0xMAIN", 1000, 500.0),
+            ("felix", "0xfelix", 1000, 999.0),
+        ],
+    )
+    con.commit()
+
+    result = portfolio_mod._get_total_equity(con)
+
+    assert result["total_equity_usd"] == 51499.0
+    assert result["equity_by_account"]["0xfelix"] == 999.0

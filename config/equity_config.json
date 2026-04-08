@@ -1,5 +1,5 @@
 {
-  "builder_dexes": ["xyz", "hyna"],
+  "builder_dexes": ["xyz", "hyna", "flx"],
   "exclude_spot_tokens": {
     "0x3c2c0B452B465c595fE106Ef40c55Bf4383D2453": ["HAR", "KNTQ"]
   }

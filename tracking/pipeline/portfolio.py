@@ -45,14 +45,9 @@ def _get_total_equity(con: sqlite3.Connection) -> Dict[str, Any]:
     Filters pm_account_snapshots to addresses owned by the delta_neutral strategy.
     Other strategy wallets (depeg, lending) are tracked separately via vault providers.
     """
-    from tracking.position_manager.accounts import get_strategy_wallets
+    from tracking.position_manager.accounts import get_delta_neutral_equity_account_ids
 
-    try:
-        dn_wallets = get_strategy_wallets("delta_neutral")
-    except KeyError:
-        dn_wallets = []
-
-    dn_addresses = [w["address"] for w in dn_wallets if w.get("address")]
+    dn_addresses = get_delta_neutral_equity_account_ids()
     if not dn_addresses:
         return {"total_equity_usd": 0.0, "equity_by_account": {}}
 

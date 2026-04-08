@@ -20,7 +20,7 @@ import json
 import os
 import time
 import urllib.request
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .private_base import PrivateConnectorBase
 
@@ -251,8 +251,7 @@ class HyperliquidPrivateConnector(PrivateConnectorBase):
             "raw_json": breakdown,
         }
 
-    def fetch_open_positions(self, *, dex: Optional[str] = None) -> List[Dict]:
-        use_dex = self.dex if dex is None else str(dex or "").strip()
+    def _fetch_open_positions_single(self, use_dex: str) -> List[Dict[str, Any]]:
         st = post_info({"type": "clearinghouseState", "user": self.address}, dex=use_dex)
         if not isinstance(st, dict):
             return []
@@ -315,4 +314,32 @@ class HyperliquidPrivateConnector(PrivateConnectorBase):
                 }
             )
 
+        return out
+
+    def fetch_open_positions(
+        self,
+        *,
+        dex: Optional[str] = None,
+        builder_dexes: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """Open perp positions for the default dex plus optional builder dexes (HIP-3).
+
+        When ``builder_dexes`` is set (e.g. from equity_config.json), merges positions
+        from each dex clearinghouse so e.g. ``xyz:*`` and ``flx:*`` legs can be matched.
+        """
+        use_dex = self.dex if dex is None else str(dex or "").strip()
+        dex_list: List[str] = []
+        seen: Set[str] = set()
+        for d in [use_dex] + list(builder_dexes or []):
+            ds = str(d).strip()
+            if ds in seen:
+                continue
+            seen.add(ds)
+            dex_list.append(ds)
+
+        out: List[Dict[str, Any]] = []
+        for i, d in enumerate(dex_list):
+            if i > 0:
+                time.sleep(0.3)
+            out.extend(self._fetch_open_positions_single(d))
         return out

@@ -43,13 +43,9 @@ def _compute_fund_utilization(
 
     Filters to delta_neutral strategy wallets only — lending/depeg tracked separately.
     """
-    from tracking.position_manager.accounts import get_strategy_wallets
+    from tracking.position_manager.accounts import get_delta_neutral_equity_account_ids
 
-    try:
-        dn_wallets = get_strategy_wallets("delta_neutral")
-    except KeyError:
-        dn_wallets = []
-    dn_addresses = {w["address"].lower() for w in dn_wallets if w.get("address")}
+    dn_addresses = {a.lower() for a in get_delta_neutral_equity_account_ids()}
 
     # 1. Per-account available/margin from latest snapshots (already fetched in caller
     #    but we need extra columns, so re-query with full columns)
@@ -150,12 +146,9 @@ def portfolio_overview(
     ).fetchone()
 
     # 2. Latest account snapshots (equity per wallet), filtered to DN wallets only
-    from tracking.position_manager.accounts import get_strategy_wallets
-    try:
-        _dn_wallets = get_strategy_wallets("delta_neutral")
-    except KeyError:
-        _dn_wallets = []
-    _dn_addresses = {w["address"].lower() for w in _dn_wallets if w.get("address")}
+    from tracking.position_manager.accounts import get_delta_neutral_equity_account_ids
+
+    _dn_addresses = {a.lower() for a in get_delta_neutral_equity_account_ids()}
 
     account_rows = db.execute(
         """
@@ -331,5 +324,11 @@ def _account_label(account_id: str) -> str:
             addr = w.get("address", "")
             if isinstance(addr, str) and addr.lower() == account_id.lower():
                 return str(w.get("label", account_id[:10]))
+
+    from tracking.position_manager.accounts import get_felix_wallet_address_from_env
+
+    fx = get_felix_wallet_address_from_env()
+    if fx and account_id.lower() == fx:
+        return "felix"
 
     return account_id[:10]

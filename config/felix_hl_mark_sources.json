@@ -1,0 +1,4 @@
+{
+  "MUon/USDC": { "venue": "hyperliquid", "inst_id": "xyz:MU" },
+  "MSTRon/USDC": { "venue": "hyperliquid", "inst_id": "xyz:MSTR" }
+}

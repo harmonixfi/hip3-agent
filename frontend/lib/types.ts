@@ -223,6 +223,9 @@ export interface ManualCashflowResponse {
   vault_cashflow_id: number;
   message: string;
   pm_cashflow_ids: number[];
+  /** True when vault/strategy snapshots were recomputed for overview APR */
+  snapshot_refreshed?: boolean;
+  snapshot_error?: string | null;
 }
 
 /** GET /api/cashflows/manual — manual source rows only */
@@ -305,6 +308,15 @@ export interface StrategyDetail {
   apr_7d: number | null;
   equity_breakdown: Record<string, unknown> | null;
   wallets: { wallet_label: string; venue: string }[] | null;
+}
+
+/** GET /api/vault/strategies/{id}/snapshots — daily strategy equity history */
+export interface StrategySnapshot {
+  ts: number;
+  equity_usd: number;
+  apr_since_inception: number | null;
+  apr_30d: number | null;
+  apr_7d: number | null;
 }
 
 // ============================================================

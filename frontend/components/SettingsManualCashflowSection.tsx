@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import ManualCashflowForm from "@/components/ManualCashflowForm";
-import ManualCashflowsTable from "@/components/ManualCashflowsTable";
+import CashflowsTable from "@/components/CashflowsTable";
 
 export default function SettingsManualCashflowSection() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -13,7 +13,7 @@ export default function SettingsManualCashflowSection() {
   return (
     <div className="space-y-6">
       <ManualCashflowForm onSuccess={onSuccess} />
-      <ManualCashflowsTable refreshKey={refreshKey} />
+      <CashflowsTable refreshKey={refreshKey} />
     </div>
   );
 }

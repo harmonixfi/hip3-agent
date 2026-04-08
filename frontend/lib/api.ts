@@ -12,6 +12,7 @@ import type {
   VaultSnapshot,
   VaultCashflow,
   StrategyDetail,
+  StrategySnapshot,
   CandidatesResponse,
 } from "./types";
 
@@ -158,6 +159,16 @@ export async function fetchVaultStrategyDetail(
 ): Promise<StrategyDetail> {
   return apiFetch<StrategyDetail>(
     `/api/vault/strategies/${encodeURIComponent(strategyId)}`,
+  );
+}
+
+export async function fetchVaultStrategySnapshots(
+  strategyId: string,
+  limit = 90,
+): Promise<StrategySnapshot[]> {
+  const q = new URLSearchParams({ limit: String(limit) });
+  return apiFetch<StrategySnapshot[]>(
+    `/api/vault/strategies/${encodeURIComponent(strategyId)}/snapshots?${q.toString()}`,
   );
 }
 

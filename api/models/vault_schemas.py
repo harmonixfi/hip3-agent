@@ -78,6 +78,8 @@ class VaultCashflowResponse(BaseModel):
     recalculated: bool = False
     recalc_snapshots_affected: int = 0
     message: str
+    snapshot_refreshed: bool = False
+    snapshot_error: Optional[str] = None
 
 
 class VaultCashflowItem(BaseModel):

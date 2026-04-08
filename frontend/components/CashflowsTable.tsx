@@ -1,20 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ApiError, getManualCashflows } from "@/lib/api";
-import type { ManualCashflowListItem } from "@/lib/types";
-
-function truncateMiddle(s: string, left = 6, right = 4): string {
-  if (s.length <= left + right + 3) return s;
-  return `${s.slice(0, left)}…${s.slice(-right)}`;
-}
+import { ApiError, fetchVaultCashflows } from "@/lib/api";
+import type { VaultCashflow } from "@/lib/types";
 
 interface Props {
   refreshKey: number;
 }
 
-export default function ManualCashflowsTable({ refreshKey }: Props) {
-  const [rows, setRows] = useState<ManualCashflowListItem[] | null>(null);
+function strategyCell(cf: VaultCashflow): string {
+  if (cf.cf_type === "TRANSFER") {
+    const a = cf.from_strategy_id ?? "—";
+    const b = cf.to_strategy_id ?? "—";
+    return `${a} → ${b}`;
+  }
+  return cf.strategy_id ?? "—";
+}
+
+export default function CashflowsTable({ refreshKey }: Props) {
+  const [rows, setRows] = useState<VaultCashflow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -22,10 +26,10 @@ export default function ManualCashflowsTable({ refreshKey }: Props) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getManualCashflows(50)
+    fetchVaultCashflows(50)
       .then((res) => {
         if (!cancelled) {
-          setRows(res.items);
+          setRows(res);
         }
       })
       .catch((e: unknown) => {
@@ -51,11 +55,11 @@ export default function ManualCashflowsTable({ refreshKey }: Props) {
   return (
     <div className="card">
       <div className="text-xs text-gray-500 uppercase tracking-wide mb-4">
-        Manual cashflows
+        Cashflows
       </div>
       <p className="text-xs text-gray-500 mb-3">
-        Read-only history of deposits and withdrawals recorded with source{" "}
-        <span className="text-gray-400">manual</span> (newest first).
+        Read-only history of deposits, withdrawals, and strategy transfers used
+        for strategy APR (newest first).
       </p>
 
       {loading && (
@@ -65,7 +69,7 @@ export default function ManualCashflowsTable({ refreshKey }: Props) {
         <p className="text-red-400 text-sm py-2">{error}</p>
       )}
       {!loading && !error && rows && rows.length === 0 && (
-        <p className="text-gray-500 text-sm py-4">No manual cashflows yet.</p>
+        <p className="text-gray-500 text-sm py-4">No cashflows yet.</p>
       )}
       {!loading && !error && rows && rows.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-gray-800">
@@ -77,8 +81,6 @@ export default function ManualCashflowsTable({ refreshKey }: Props) {
                 <th className="px-3 py-2 text-right">Amount</th>
                 <th className="px-3 py-2 text-left">Currency</th>
                 <th className="px-3 py-2 text-left">Strategy</th>
-                <th className="px-3 py-2 text-left">Venue</th>
-                <th className="px-3 py-2 text-left">Account</th>
                 <th className="px-3 py-2 text-left max-w-[12rem]">Description</th>
                 <th className="px-3 py-2 text-right">ID</th>
               </tr>
@@ -98,19 +100,10 @@ export default function ManualCashflowsTable({ refreshKey }: Props) {
                   </td>
                   <td className="px-3 py-2 text-gray-400">{r.currency}</td>
                   <td
-                    className="px-3 py-2 text-gray-300 font-mono text-xs max-w-[10rem] truncate"
-                    title={r.strategy_id ?? undefined}
+                    className="px-3 py-2 text-gray-300 font-mono text-xs max-w-[14rem] truncate"
+                    title={strategyCell(r)}
                   >
-                    {r.strategy_id ?? "—"}
-                  </td>
-                  <td className="px-3 py-2 text-gray-500 text-xs">
-                    {r.venue ?? "—"}
-                  </td>
-                  <td
-                    className="px-3 py-2 text-gray-400 font-mono text-xs max-w-[9rem] truncate"
-                    title={r.account_id ?? undefined}
-                  >
-                    {r.account_id ? truncateMiddle(r.account_id) : "—"}
+                    {strategyCell(r)}
                   </td>
                   <td className="px-3 py-2 text-gray-500 max-w-[12rem] truncate">
                     {r.description ?? "—"}

@@ -238,6 +238,14 @@ class ManualCashflowResponse(BaseModel):
         ...,
         description="Portfolio row ids: one for DEPOSIT/WITHDRAW, two for TRANSFER.",
     )
+    snapshot_refreshed: bool = Field(
+        False,
+        description="True if vault/strategy snapshots were recomputed at now for overview APR.",
+    )
+    snapshot_error: Optional[str] = Field(
+        None,
+        description="Set when snapshot refresh failed; cashflow is still recorded.",
+    )
 
 
 class ManualCashflowListItem(BaseModel):

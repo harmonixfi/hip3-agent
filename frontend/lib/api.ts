@@ -172,21 +172,6 @@ export async function fetchVaultStrategySnapshots(
   );
 }
 
-export async function createVaultCashflow(data: {
-  cf_type: string;
-  amount: number;
-  strategy_id?: string;
-  from_strategy_id?: string;
-  to_strategy_id?: string;
-  ts?: number;
-  description?: string;
-}): Promise<{ cashflow_id: number; recalculated: boolean; message: string }> {
-  return apiFetch("/api/vault/cashflows", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-}
-
 // ---- Candidates ----
 
 export async function getCandidates(): Promise<CandidatesResponse> {

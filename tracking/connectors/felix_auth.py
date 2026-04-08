@@ -2,8 +2,8 @@
 
 Implements the Turnkey authentication protocol:
 1. Generate P-256 session keypair (for session refresh)
-2. Sign stamp_login request body with wallet secp256k1 key
-3. Create X-Stamp header for Turnkey API authentication
+2. Sign each POST body with the EVM wallet using EIP-191 (same as @turnkey/wallet-stamper)
+3. Create X-Stamp header (SIGNATURE_SCHEME_TK_API_SECP256K1_EIP191 + DER signature)
 4. Exchange for JWT (ES256, 900s TTL)
 5. Refresh using P-256 session key before expiry
 
@@ -30,14 +30,19 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec, utils
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+from eth_account import Account
+from eth_account.messages import encode_defunct
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -49,6 +54,11 @@ FELIX_ORG_ID = "b052e625-0ea1-4e6a-b3a4-dd3d8e06f636"
 FELIX_AUTH_PROXY_CONFIG = "cc6ef853-e2e2-45db-a0f8-7c46be0ad04f"
 JWT_TTL_SECONDS = 900
 REFRESH_BUFFER_SECONDS = 120  # refresh when <2 min remaining
+
+# EVM wallets use EIP-191 over the raw POST body (matches @turnkey/wallet-stamper).
+TURNKEY_STAMP_SCHEME_SECP256K1_EIP191 = "SIGNATURE_SCHEME_TK_API_SECP256K1_EIP191"
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Session dataclass
@@ -156,6 +166,19 @@ def _get_secp256k1_public_key_hex(private_key: ec.EllipticCurvePrivateKey) -> st
     return pub_bytes.hex()
 
 
+def _get_secp256k1_public_key_hex_compressed(private_key: ec.EllipticCurvePrivateKey) -> str:
+    """Get compressed secp256k1 public key as hex (33 bytes = 66 hex chars).
+
+    Turnkey X-Stamp verification expects SIGNATURE_SCHEME_TK_API_P256 stamps to
+    carry a compressed pubkey (see Turnkey API key signature format).
+    """
+    pub_bytes = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.X962,
+        format=serialization.PublicFormat.CompressedPoint,
+    )
+    return pub_bytes.hex()
+
+
 def sign_with_secp256k1(wallet_private_key_hex: str, message: bytes) -> str:
     """Sign a message with secp256k1 private key, return DER-encoded signature as hex.
 
@@ -178,32 +201,34 @@ def sign_with_secp256k1(wallet_private_key_hex: str, message: bytes) -> str:
 def build_x_stamp_header(wallet_private_key_hex: str, body: bytes) -> str:
     """Build the X-Stamp header value for Turnkey API authentication.
 
-    The X-Stamp is a base64url-encoded JSON object containing:
-    - publicKey: hex-encoded uncompressed secp256k1 public key
-    - signature: hex-encoded DER signature of the body
-    - scheme: "SIGNATURE_SCHEME_TK_API_P256"
+    EVM wallets must match `@turnkey/wallet-stamper`: EIP-191 sign the UTF-8 POST
+    body, DER-encode the (r,s) signature, compressed secp256k1 pubkey, scheme
+    SIGNATURE_SCHEME_TK_API_SECP256K1_EIP191 (not TK_API_P256).
 
     Args:
         wallet_private_key_hex: secp256k1 wallet private key (hex, 64 chars)
-        body: the raw POST body bytes to sign
+        body: the raw POST body bytes (same bytes sent in the HTTP body)
 
     Returns:
         base64url-encoded X-Stamp header value (no padding)
     """
     private_key = _load_secp256k1_private_key(wallet_private_key_hex)
+    pub_hex = _get_secp256k1_public_key_hex_compressed(private_key)
 
-    # Get uncompressed public key hex
-    pub_hex = _get_secp256k1_public_key_hex(private_key)
+    # EIP-191 personal_sign equivalent (matches viem hashMessage + wallet sign)
+    k = wallet_private_key_hex.strip()
+    if not k.startswith(("0x", "0X")):
+        k = "0x" + k
+    acct = Account.from_key(k)
+    signable = encode_defunct(primitive=body)
+    signed_msg = acct.sign_message(signable)
+    der_sig = encode_dss_signature(signed_msg.r, signed_msg.s)
+    sig_hex = der_sig.hex()
 
-    # Sign the body
-    signature_der = private_key.sign(body, ec.ECDSA(hashes.SHA256()))
-    sig_hex = signature_der.hex()
-
-    # Build stamp JSON
     stamp = {
         "publicKey": pub_hex,
         "signature": sig_hex,
-        "scheme": "SIGNATURE_SCHEME_TK_API_P256",
+        "scheme": TURNKEY_STAMP_SCHEME_SECP256K1_EIP191,
     }
     stamp_json = json.dumps(stamp, separators=(",", ":")).encode("utf-8")
 
@@ -287,6 +312,8 @@ def parse_stamp_login_response(response: Dict[str, Any]) -> str:
 # Turnkey API Calls
 # ---------------------------------------------------------------------------
 
+_MAX_ERR_BODY_LOG = 6000
+
 
 def _turnkey_post(
     path: str,
@@ -312,9 +339,28 @@ def _turnkey_post(
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read().decode("utf-8")
-        return json.loads(raw) if raw else {}
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8")
+            log.debug("Turnkey POST %s -> HTTP %s", path, resp.status)
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="replace")
+        if len(err_body) > _MAX_ERR_BODY_LOG:
+            err_body = err_body[:_MAX_ERR_BODY_LOG] + "...(truncated)"
+        log.error(
+            "Turnkey POST %s failed: HTTP %s %s. Response body: %s",
+            path,
+            e.code,
+            e.reason,
+            err_body,
+        )
+        raise RuntimeError(
+            f"Turnkey HTTP {e.code} on {path}: {e.reason}. Body: {err_body[:800]}"
+        ) from e
+    except urllib.error.URLError as e:
+        log.error("Turnkey POST %s failed: network error %s", path, e.reason)
+        raise
 
 
 def lookup_sub_org(
@@ -342,6 +388,11 @@ def lookup_sub_org(
         "filterValue": wallet_address.lower(),
     }, separators=(",", ":")).encode("utf-8")
 
+    log.info(
+        "Felix auth: Turnkey list_suborgs (root_org=%s, wallet=%s)",
+        root_org_id,
+        wallet_address,
+    )
     response = _turnkey_post(
         "/public/v1/query/list_suborgs",
         body,
@@ -350,6 +401,10 @@ def lookup_sub_org(
 
     # Response: {"organizationIds": ["sub-org-id-1", ...]}
     org_ids = response.get("organizationIds", [])
+    log.info(
+        "Felix auth: list_suborgs returned %d sub-org id(s)",
+        len(org_ids),
+    )
     if not org_ids:
         raise RuntimeError(
             f"No Turnkey sub-org found for wallet {wallet_address}. "
@@ -405,6 +460,7 @@ def initial_login(
     body_bytes = body_str.encode("utf-8")
 
     # Step 4: POST to Turnkey with X-Stamp
+    log.info("Felix auth: Turnkey stamp_login (sub_org_id=%s)", sub_org_id)
     response = _turnkey_post(
         "/public/v1/submit/stamp_login",
         body_bytes,
@@ -456,6 +512,7 @@ def refresh_session(
         body_bytes = body_str.encode("utf-8")
 
         # Sign and POST
+        log.info("Felix auth: Turnkey stamp_login refresh (sub_org_id=%s)", session.sub_org_id)
         response = _turnkey_post(
             "/public/v1/submit/stamp_login",
             body_bytes,

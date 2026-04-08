@@ -33,6 +33,23 @@ os.environ["HARMONIX_API_KEY"] = TEST_API_KEY
 from fastapi.testclient import TestClient
 
 
+def _noop_run_daily_snapshot(con):
+    return {
+        "strategies_processed": 0,
+        "vault_equity": 0.0,
+        "vault_apr": 0.0,
+        "weights": {},
+    }
+
+
+@pytest.fixture(autouse=True)
+def _stub_run_daily_snapshot_after_manual_http(monkeypatch):
+    monkeypatch.setattr(
+        "tracking.vault.snapshot.run_daily_snapshot",
+        _noop_run_daily_snapshot,
+    )
+
+
 def _headers() -> dict:
     return {"X-API-Key": TEST_API_KEY}
 

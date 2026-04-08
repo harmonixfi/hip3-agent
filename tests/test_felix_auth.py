@@ -91,8 +91,12 @@ def test_build_x_stamp_header():
     decoded = json.loads(base64.urlsafe_b64decode(stamp + "=="))
     assert "publicKey" in decoded
     assert "signature" in decoded
-    assert decoded["scheme"] == "SIGNATURE_SCHEME_TK_API_P256"
-    assert len(decoded["publicKey"]) == 130  # uncompressed secp256k1 (65 bytes)
+    assert decoded["scheme"] == "SIGNATURE_SCHEME_TK_API_SECP256K1_EIP191"
+    # Turnkey expects compressed secp256k1 (33 bytes = 66 hex chars, prefix 02/03)
+    assert len(decoded["publicKey"]) == 66
+    assert decoded["publicKey"][:2] in ("02", "03")
+    # DER ECDSA signature (variable length, typically ~70–72 bytes hex ~140–144)
+    assert len(decoded["signature"]) >= 128
 
 
 def test_build_stamp_login_body():

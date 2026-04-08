@@ -12,6 +12,7 @@ import type {
   VaultSnapshot,
   VaultCashflow,
   StrategyDetail,
+  StrategySnapshot,
   CandidatesResponse,
 } from "./types";
 
@@ -161,19 +162,14 @@ export async function fetchVaultStrategyDetail(
   );
 }
 
-export async function createVaultCashflow(data: {
-  cf_type: string;
-  amount: number;
-  strategy_id?: string;
-  from_strategy_id?: string;
-  to_strategy_id?: string;
-  ts?: number;
-  description?: string;
-}): Promise<{ cashflow_id: number; recalculated: boolean; message: string }> {
-  return apiFetch("/api/vault/cashflows", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
+export async function fetchVaultStrategySnapshots(
+  strategyId: string,
+  limit = 90,
+): Promise<StrategySnapshot[]> {
+  const q = new URLSearchParams({ limit: String(limit) });
+  return apiFetch<StrategySnapshot[]>(
+    `/api/vault/strategies/${encodeURIComponent(strategyId)}/snapshots?${q.toString()}`,
+  );
 }
 
 // ---- Candidates ----

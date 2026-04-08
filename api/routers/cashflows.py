@@ -23,6 +23,7 @@ from tracking.vault.manual_dual_write import (
     insert_manual_transfer_dual,
     require_active_strategy,
 )
+from tracking.vault.snapshot import refresh_vault_snapshots_after_cashflow_event
 
 router = APIRouter(prefix="/api/cashflows", tags=["cashflows"])
 
@@ -163,9 +164,17 @@ def record_manual_cashflow(
     if recalculated:
         msg += f" ({recalc_count} snapshots recalculated)"
 
+    snapshot_refreshed, snapshot_error = refresh_vault_snapshots_after_cashflow_event(db)
+    if snapshot_refreshed:
+        msg += " Vault metrics refreshed."
+    elif snapshot_error:
+        msg += f" Warning: vault metrics refresh failed ({snapshot_error})."
+
     return ManualCashflowResponse(
         cashflow_id=pm_ids[0],
         vault_cashflow_id=vault_id,
         message=msg,
         pm_cashflow_ids=pm_ids,
+        snapshot_refreshed=snapshot_refreshed,
+        snapshot_error=snapshot_error,
     )

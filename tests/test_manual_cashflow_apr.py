@@ -8,7 +8,8 @@ Formula (same as ``tracking.vault.apr.cashflow_adjusted_apr``)::
 ``apr`` is in “percent points” style (e.g. 18.25 means ~18.25% annualized) for a 1-day window.
 
 POST /api/cashflows/manual dual-writes then calls ``recalc_snapshots`` when the cashflow ``ts`` is
-strictly before ``MAX(vault_strategy_snapshots.ts)``.
+strictly before ``MAX(vault_strategy_snapshots.ts)``, and always triggers a vault snapshot refresh
+(``run_daily_snapshot``) so overview APR can update immediately (stubbed in these tests).
 
 ----------------------------------------------------------------------------
 Test setup (what this file builds)
@@ -98,6 +99,24 @@ SCHEMA_VAULT = ROOT / "tracking" / "sql" / "schema_vault.sql"
 TEST_API_KEY = "test-key-12345"
 
 DAY_MS = 86400000
+
+
+def _noop_run_daily_snapshot(con):
+    return {
+        "strategies_processed": 0,
+        "vault_equity": 0.0,
+        "vault_apr": 0.0,
+        "weights": {},
+    }
+
+
+@pytest.fixture(autouse=True)
+def _stub_run_daily_snapshot_after_manual_http(monkeypatch):
+    """POST /manual refreshes vault snapshots at now; stub so tests keep asserting on fixed ts rows."""
+    monkeypatch.setattr(
+        "tracking.vault.snapshot.run_daily_snapshot",
+        _noop_run_daily_snapshot,
+    )
 
 
 def _headers() -> dict:
@@ -407,7 +426,7 @@ def test_scenario_1000_to_1100_no_cashflow_organic_apr_36_5_percent():
             con.close()
 
         want = expected_apr(1000.0, 1100.0, 0.0, 1.0)
-        assert want == pytest.approx(36.5)
+        assert want == pytest.approx(3650.0)  # cashflow_adjusted_apr uses ×100 vs raw ratio
         assert apr_s == pytest.approx(want)
         assert apr_v == pytest.approx(want)
     finally:
@@ -449,7 +468,7 @@ def test_scenario_1000_to_1100_with_deposit_50_apr_18_25_percent_strategy_and_va
         assert resp.status_code == 201, resp.text
 
         want = expected_apr(1000.0, 1100.0, 50.0, 1.0)
-        assert want == pytest.approx(18.25)
+        assert want == pytest.approx(1825.0)
 
         con = sqlite3.connect(str(db_path))
         try:
@@ -501,8 +520,8 @@ def test_scenario_two_legs_deposit_50_on_strat_a_only_split_apr():
         want_b = expected_apr(500.0, 550.0, 0.0, 1.0)
         want_v = expected_apr(1000.0, 1100.0, 50.0, 1.0)
         assert want_a == pytest.approx(0.0)
-        assert want_b == pytest.approx(36.5)
-        assert want_v == pytest.approx(18.25)
+        assert want_b == pytest.approx(3650.0)
+        assert want_v == pytest.approx(1825.0)
 
         con = sqlite3.connect(str(db_path))
         try:
@@ -551,7 +570,7 @@ def test_scenario_withdraw_25_reduces_organic_vs_raw_move_single_strategy():
         assert resp.status_code == 201, resp.text
 
         want = expected_apr(1000.0, 1100.0, -25.0, 1.0)
-        assert want == pytest.approx(45.625)
+        assert want == pytest.approx(4562.5)
 
         con = sqlite3.connect(str(db_path))
         try:

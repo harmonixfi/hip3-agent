@@ -295,3 +295,18 @@ def run_daily_snapshot(con: sqlite3.Connection) -> Dict[str, Any]:
         "vault_apr": vault_apr,
         "weights": weights,
     }
+
+
+def refresh_vault_snapshots_after_cashflow_event(con: sqlite3.Connection) -> tuple[bool, str | None]:
+    """Re-run the daily snapshot pipeline so vault overview APR/equity match the ledger.
+
+    Call after recording a cashflow so GET /api/vault/overview reflects the new flows without
+    waiting for cron. Returns (True, None) on success, (False, error message) on failure;
+    callers should still treat the cashflow as recorded if this fails.
+    """
+    try:
+        run_daily_snapshot(con)
+        return True, None
+    except Exception as e:
+        log.exception("refresh_vault_snapshots_after_cashflow_event failed")
+        return False, str(e)

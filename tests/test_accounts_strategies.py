@@ -203,17 +203,18 @@ def test_get_felix_wallet_address_from_env_normalizes(tmp_strategies, monkeypatc
     assert accounts_mod.get_felix_wallet_address_from_env() is None
 
 
-def test_get_delta_neutral_equity_account_ids_merges_felix(tmp_strategies, monkeypatch):
+def test_get_delta_neutral_equity_account_ids_excludes_felix(tmp_strategies, monkeypatch):
+    """FELIX_WALLET_ADDRESS set in env must NOT appear in DN account ids."""
     monkeypatch.setenv("FELIX_WALLET_ADDRESS", "0xFELIX")
     ids = accounts_mod.get_delta_neutral_equity_account_ids()
     assert "0xALT" in ids
     assert "0xMAIN" in ids
-    assert "0xfelix" in ids
+    assert "0xfelix" not in ids
+    assert "0xFELIX" not in ids
 
 
-def test_get_delta_neutral_equity_account_ids_dedupes_felix_with_strategy_wallet(
-    tmp_strategies, monkeypatch,
-):
-    monkeypatch.setenv("FELIX_WALLET_ADDRESS", "0xALT")
+def test_get_delta_neutral_equity_account_ids_no_felix_when_env_unset(tmp_strategies, monkeypatch):
+    """Without FELIX_WALLET_ADDRESS, DN ids are exactly the strategy wallet addresses."""
+    monkeypatch.delenv("FELIX_WALLET_ADDRESS", raising=False)
     ids = accounts_mod.get_delta_neutral_equity_account_ids()
     assert ids == ["0xALT", "0xMAIN"]

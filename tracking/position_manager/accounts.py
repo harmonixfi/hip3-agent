@@ -159,9 +159,8 @@ def get_felix_wallet_address_from_env() -> Optional[str]:
 def get_delta_neutral_equity_account_ids() -> List[str]:
     """Account ids used for delta-neutral equity (``pm_account_snapshots`` / DN totals).
 
-    Includes every non-empty ``address`` from ``get_strategy_wallets("delta_neutral")``,
-    plus ``FELIX_WALLET_ADDRESS`` (normalized lower-case) when set. De-duplicates by
-    lower-case so the same address is not double-counted across HL and Felix.
+    Returns every non-empty ``address`` from ``get_strategy_wallets("delta_neutral")``.
+    De-duplicates by lower-case so the same address is not double-counted.
     """
     try:
         dn = get_strategy_wallets("delta_neutral")
@@ -180,10 +179,5 @@ def get_delta_neutral_equity_account_ids() -> List[str]:
             continue
         seen_lower.add(key)
         out.append(a)
-
-    felix = get_felix_wallet_address_from_env()
-    if felix and felix not in seen_lower:
-        seen_lower.add(felix)
-        out.append(felix)
 
     return out

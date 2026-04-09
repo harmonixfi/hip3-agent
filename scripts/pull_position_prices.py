@@ -237,9 +237,27 @@ def main() -> int:
 
     n = insert_prices(con, price_rows)
     con.commit()
+
+    # Sync pm_legs.current_price from prices_v3 immediately so the API
+    # reflects fresh prices without waiting for pipeline_hourly.py.
+    from tracking.pipeline.price_utils import resolve_price
+    legs = con.execute(
+        "SELECT leg_id, venue, inst_id FROM pm_legs WHERE status = 'OPEN'"
+    ).fetchall()
+    synced = 0
+    for leg_id, venue, inst_id in legs:
+        row = resolve_price(con, venue, inst_id, leg_id=leg_id)
+        if row is None:
+            continue
+        price = row.get("mid") or row.get("last") or row.get("bid") or row.get("ask")
+        if price is None or row.get("ts", 0) == 0:
+            continue
+        con.execute("UPDATE pm_legs SET current_price = ? WHERE leg_id = ?", (price, leg_id))
+        synced += 1
+    con.commit()
     con.close()
 
-    print(f"\nDone: {n} price rows inserted for {len(all_prices)} instruments")
+    print(f"\nDone: {n} price rows inserted for {len(all_prices)} instruments, {synced} pm_legs prices synced")
     return 0
 
 

@@ -1,13 +1,10 @@
-import { getPortfolioOverview, getOpenPositions, getHealth, fetchVaultOverview } from "@/lib/api";
+import { getPortfolioOverview, getOpenPositions, getHealth } from "@/lib/api";
 import EquityCard from "@/components/EquityCard";
 import WalletBreakdown from "@/components/WalletBreakdown";
 import FundingSummary from "@/components/FundingSummary";
 import FundUtilizationCard from "@/components/FundUtilizationCard";
 import PositionsTable from "@/components/PositionsTable";
 import HealthStatus from "@/components/HealthStatus";
-import VaultSummary from "@/components/VaultSummary";
-import AllocationBar from "@/components/AllocationBar";
-import StrategyTable from "@/components/StrategyTable";
 
 export const revalidate = 60; // ISR: revalidate every 60 seconds
 
@@ -15,7 +12,6 @@ export default async function DashboardPage() {
   let portfolioData;
   let positions;
   let health;
-  let vaultOverview = null;
   let error: string | null = null;
 
   try {
@@ -26,12 +22,6 @@ export default async function DashboardPage() {
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : "Failed to fetch data";
-  }
-
-  try {
-    vaultOverview = await fetchVaultOverview();
-  } catch {
-    vaultOverview = null;
   }
 
   if (error || !portfolioData || !positions || !health) {
@@ -61,17 +51,6 @@ export default async function DashboardPage() {
 
       {/* System status bar */}
       <HealthStatus data={health} />
-
-      {vaultOverview && (
-        <section className="space-y-4">
-          <VaultSummary data={vaultOverview} />
-          <AllocationBar strategies={vaultOverview.strategies} />
-          <div>
-            <h2 className="text-sm font-medium text-gray-400 mb-2">Strategies</h2>
-            <StrategyTable strategies={vaultOverview.strategies} />
-          </div>
-        </section>
-      )}
 
       {/* Top row: Equity + Wallets + Funding + Utilization */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

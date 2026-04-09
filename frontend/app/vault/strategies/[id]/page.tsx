@@ -1,17 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  ApiError,
-  fetchVaultStrategyDetail,
-  fetchVaultStrategySnapshots,
-} from "@/lib/api";
-import type { StrategySnapshot } from "@/lib/types";
+import { ApiError, fetchVaultStrategyDetail } from "@/lib/api";
 import { formatUSD, formatPct } from "@/lib/format";
 
 export const revalidate = 60;
-
-/** Daily rows requested for equity history (spec default; API default is 30). */
-const STRATEGY_EQUITY_HISTORY_LIMIT = 90;
 
 interface Props {
   params: { id: string };
@@ -21,12 +13,8 @@ export default async function VaultStrategyDetailPage({ params }: Props) {
   const id = decodeURIComponent(params.id);
 
   let detail = null;
-  let snapshots: StrategySnapshot[] = [];
   try {
-    [detail, snapshots] = await Promise.all([
-      fetchVaultStrategyDetail(id),
-      fetchVaultStrategySnapshots(id, STRATEGY_EQUITY_HISTORY_LIMIT),
-    ]);
+    detail = await fetchVaultStrategyDetail(id);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) {
       notFound();
@@ -103,49 +91,6 @@ export default async function VaultStrategyDetailPage({ params }: Props) {
           </pre>
         </div>
       )}
-
-      <section className="card">
-        <h2 className="text-sm font-medium text-gray-400 mb-3">Equity history</h2>
-        {snapshots.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            No daily snapshots yet for this strategy (snapshot job may not have run).
-          </p>
-        ) : (
-          <div className="overflow-x-auto rounded-lg border border-gray-800 -mx-px">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-900/80 text-gray-400 text-xs uppercase">
-                <tr>
-                  <th className="px-3 py-2 text-left">Date</th>
-                  <th className="px-3 py-2 text-right">Equity</th>
-                  <th className="px-3 py-2 text-right">APR (inception)</th>
-                  <th className="px-3 py-2 text-right">30d / 7d APR</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {snapshots.map((s) => (
-                  <tr key={s.ts}>
-                    <td className="px-3 py-2 text-gray-300">
-                      {new Date(s.ts).toLocaleDateString()}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-white">
-                      {formatUSD(s.equity_usd)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-emerald-400">
-                      {s.apr_since_inception != null
-                        ? formatPct(s.apr_since_inception, 2)
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-200">
-                      {s.apr_30d != null ? formatPct(s.apr_30d, 2) : "—"} /{" "}
-                      {s.apr_7d != null ? formatPct(s.apr_7d, 2) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
     </div>
   );
 }

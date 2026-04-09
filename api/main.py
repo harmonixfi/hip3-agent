@@ -71,10 +71,6 @@ app.add_middleware(
 async def api_key_auth(request: Request, call_next) -> Response:
     """Validate X-API-Key header on /api/* routes."""
     if request.url.path.startswith("/api/"):
-        # CORS preflight sends OPTIONS without X-API-Key; must not 401 or the browser blocks the real request.
-        if request.method == "OPTIONS":
-            return await call_next(request)
-
         expected_key = get_settings().api_key
         if not expected_key:
             return JSONResponse(
@@ -95,14 +91,7 @@ async def api_key_auth(request: Request, call_next) -> Response:
 # -------------------------------------------------------------------
 # Register routers
 # -------------------------------------------------------------------
-from api.routers import (  # noqa: E402
-    portfolio,
-    positions,
-    cashflows,
-    health,
-    vault,
-    candidates,
-)
+from api.routers import portfolio, positions, cashflows, health, vault, candidates  # noqa: E402
 
 app.include_router(portfolio.router)
 app.include_router(positions.router)

@@ -105,16 +105,14 @@ def get_candidates() -> CandidatesResponse:
 
 @router.post("/refresh")
 def refresh_candidates() -> dict:
-    """Run export_core_candidates.py and write GET /api/candidates data to CSV."""
+    """Run export_core_candidates.py and return elapsed time."""
     t0 = time.time()
     python = str(PYTHON_BIN) if PYTHON_BIN.exists() else "python"
-    CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
-        [python, str(SCRIPT_PATH), "--csv", str(CSV_PATH)],
+        [python, str(SCRIPT_PATH)],
         capture_output=True,
         text=True,
         timeout=120,
-        cwd=str(ROOT),
     )
     elapsed = round(time.time() - t0, 2)
 

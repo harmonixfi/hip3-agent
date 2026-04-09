@@ -21,7 +21,6 @@ from api.models.vault_schemas import (
     VaultOverview,
     VaultSnapshot,
 )
-from tracking.vault.snapshot import refresh_vault_snapshots_after_cashflow_event
 
 router = APIRouter(prefix="/api/vault", tags=["vault"])
 
@@ -348,17 +347,9 @@ def create_cashflow(
     if recalculated:
         msg += f" ({recalc_count} snapshots recalculated)"
 
-    snapshot_refreshed, snapshot_error = refresh_vault_snapshots_after_cashflow_event(db)
-    if snapshot_refreshed:
-        msg += " Vault metrics refreshed."
-    elif snapshot_error:
-        msg += f" Warning: vault metrics refresh failed ({snapshot_error})."
-
     return VaultCashflowResponse(
         cashflow_id=cf_id,
         recalculated=recalculated,
         recalc_snapshots_affected=recalc_count,
         message=msg,
-        snapshot_refreshed=snapshot_refreshed,
-        snapshot_error=snapshot_error,
     )

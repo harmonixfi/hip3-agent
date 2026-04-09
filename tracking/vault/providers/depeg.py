@@ -21,14 +21,10 @@ class DepegProvider(EquityProvider):
         breakdown: dict = {}
 
         for wallet in wallets:
-            address = wallet.get("address")
+            label = wallet.get("wallet_label", "depeg")
             venue = wallet.get("venue", "hyperliquid")
-            label = wallet.get("label") or wallet.get("wallet_label", "depeg")
-
-            if not address:
-                accounts = resolve_venue_accounts(venue)
-                address = accounts.get(label)
-
+            accounts = resolve_venue_accounts(venue)
+            address = accounts.get(label)
             if not address:
                 continue
 

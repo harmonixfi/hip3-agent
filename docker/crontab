@@ -1,13 +1,6 @@
 # Harmonix monitoring cron jobs
-#
-# Production env (/etc/environment or container env) must include:
-#   - strategies.json / legacy HL vars as today
-#   - FELIX_WALLET_ADDRESS + FELIX_EQUITIES_JWT for Felix pulls (optional; omit = skip Felix)
-#   - Optional: FELIX_API_ACCOUNT_ADDRESS if portfolio URL id differs from ledger
-#   - HARMONIX_NAV_DB_URL if LendingProvider / vault lending equity is used
-#
-# Position snapshots (every 5 min) — --registry is REQUIRED by pull_positions_v3.py
-*/5 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_positions_v3.py --registry config/positions.json --quiet >> /app/logs/pull_positions.log 2>&1
+# Position snapshots (every 5 min)
+*/5 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_positions_v3.py >> /app/logs/pull_positions.log 2>&1
 
 # Position prices (every 5 min, offset by 2 min)
 2-57/5 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_position_prices.py >> /app/logs/pull_position_prices.log 2>&1
@@ -15,20 +8,10 @@
 # Market data (hourly at :20)
 20 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_hyperliquid_v3.py >> /app/logs/pull_hyperliquid.log 2>&1
 
-# Felix market prices (hourly at :22) — public endpoint, no JWT; populates prices_v3 for Felix spot legs
-22 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_felix_market.py >> /app/logs/pull_felix_market.log 2>&1
-
-# Loris funding data (every 30 min) — required for candidate ranking / rotation report
-*/30 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_loris_funding.py >> /app/logs/pull_loris_funding.log 2>&1
-
-# Computation pipeline (hourly at :30) — includes vault snapshot refresh for dashboard
+# Computation pipeline (hourly at :30)
 30 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pipeline_hourly.py >> /app/logs/pipeline_hourly.log 2>&1
 
-# Equity daily snapshot (daily 02:00 UTC = 09:00 ICT) — tracks total equity per account
-0 2 * * * cd /app && env $(cat /etc/environment | xargs) python scripts/equity_daily.py snapshot >> /app/logs/equity_daily.log 2>&1
-
-# Vault multi-strategy snapshot (daily 02:05 UTC). Optional duplicate of pipeline step 7;
-# keeps a fixed daily run when NAV/lending DB is slow; safe to remove if you rely on hourly only.
+# Vault multi-strategy snapshot (daily 02:05 UTC — needs HARMONIX_NAV_DB_URL for Lending ERC4626)
 5 2 * * * cd /app && env $(cat /etc/environment | xargs) python scripts/vault_daily_snapshot.py >> /app/logs/vault_daily_snapshot.log 2>&1
 
 # Realized funding/fees ledger ingest (hourly at :37)

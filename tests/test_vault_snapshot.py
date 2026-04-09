@@ -80,17 +80,3 @@ def test_run_snapshot_writes_strategy_snapshot():
     ).fetchone()
     assert row is not None
     assert row[0] == 10000.0
-
-
-def test_refresh_vault_snapshots_after_cashflow_event_on_error():
-    from tracking.vault.snapshot import refresh_vault_snapshots_after_cashflow_event
-
-    con = _setup_db()
-    with patch(
-        "tracking.vault.snapshot.run_daily_snapshot",
-        side_effect=RuntimeError("boom"),
-    ):
-        ok, err = refresh_vault_snapshots_after_cashflow_event(con)
-    assert ok is False
-    assert err is not None
-    assert "boom" in err

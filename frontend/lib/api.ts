@@ -7,16 +7,13 @@ import type {
   HealthStatus,
   ManualCashflowRequest,
   ManualCashflowResponse,
-  ManualCashflowListResponse,
   VaultOverview,
   VaultSnapshot,
   VaultCashflow,
   StrategyDetail,
-  StrategySnapshot,
   CandidatesResponse,
 } from "./types";
 
-/** Server-side only. Browser code uses `/api/harmonix/*` proxy (see `app/api/harmonix/[...path]/route.ts`). */
 const API_BASE_URL = process.env.API_BASE_URL;
 const API_KEY = process.env.API_KEY;
 const CF_ACCESS_CLIENT_ID = process.env.CF_ACCESS_CLIENT_ID;
@@ -32,29 +29,17 @@ export class ApiError extends Error {
   }
 }
 
-/** Same-origin proxy path for client; FastAPI path always starts with `/api/`. */
-function harmonixProxyUrl(path: string): string {
-  const qIdx = path.indexOf("?");
-  const pathPart = qIdx >= 0 ? path.slice(0, qIdx) : path;
-  const query = qIdx >= 0 ? path.slice(qIdx) : "";
-  const rest = pathPart.replace(/^\/api\/?/, "");
-  return `/api/harmonix/${rest}${query}`;
-}
-
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const isServer = typeof window === "undefined";
-
-  if (isServer && !API_BASE_URL) {
-    throw new Error("Set API_BASE_URL in frontend/.env.local");
+  if (!API_BASE_URL) {
+    throw new Error("API_BASE_URL environment variable is not set");
   }
 
-  const url = isServer ? `${API_BASE_URL}${path}` : harmonixProxyUrl(path);
-
+  const url = `${API_BASE_URL}${path}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
 
-  if (isServer && API_KEY) {
+  if (API_KEY) {
     headers["X-API-Key"] = API_KEY;
   }
 
@@ -69,7 +54,8 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       ...headers,
       ...options?.headers,
     },
-    ...(isServer ? { next: { revalidate: 60 } } : {}),
+    // Revalidate every 60 seconds (ISR-style caching for server components)
+    next: { revalidate: 60 },
   });
 
   if (!res.ok) {
@@ -131,15 +117,6 @@ export async function postManualCashflow(
   });
 }
 
-export async function getManualCashflows(
-  limit = 50,
-): Promise<ManualCashflowListResponse> {
-  const q = new URLSearchParams({ limit: String(limit) });
-  return apiFetch<ManualCashflowListResponse>(
-    `/api/cashflows/manual?${q.toString()}`,
-  );
-}
-
 // ---- Vault ----
 
 export async function fetchVaultOverview(): Promise<VaultOverview> {
@@ -162,14 +139,19 @@ export async function fetchVaultStrategyDetail(
   );
 }
 
-export async function fetchVaultStrategySnapshots(
-  strategyId: string,
-  limit = 90,
-): Promise<StrategySnapshot[]> {
-  const q = new URLSearchParams({ limit: String(limit) });
-  return apiFetch<StrategySnapshot[]>(
-    `/api/vault/strategies/${encodeURIComponent(strategyId)}/snapshots?${q.toString()}`,
-  );
+export async function createVaultCashflow(data: {
+  cf_type: string;
+  amount: number;
+  strategy_id?: string;
+  from_strategy_id?: string;
+  to_strategy_id?: string;
+  ts?: number;
+  description?: string;
+}): Promise<{ cashflow_id: number; recalculated: boolean; message: string }> {
+  return apiFetch("/api/vault/cashflows", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
 }
 
 // ---- Candidates ----

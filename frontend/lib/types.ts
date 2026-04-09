@@ -342,3 +342,90 @@ export interface CandidatesResponse {
   as_of: string;
   total: number;
 }
+
+// ============================================================
+// Vault — /api/vault/*
+// ============================================================
+
+export interface StrategySummary {
+  strategy_id: string;
+  name: string;
+  type: string;
+  status: string;
+  equity_usd: number | null;
+  weight_pct: number | null;
+  target_weight_pct: number | null;
+  apr_since_inception: number | null;
+  apr_30d: number | null;
+  apr_7d: number | null;
+}
+
+export interface VaultOverview {
+  vault_name: string;
+  total_equity_usd: number;
+  total_apr: number | null;
+  apr_30d: number | null;
+  apr_7d: number | null;
+  net_deposits_alltime: number | null;
+  strategies: StrategySummary[];
+  as_of: string | null;
+}
+
+export interface VaultCashflow {
+  cashflow_id: number;
+  ts: number;
+  cf_type: string;
+  amount: number;
+  currency: string;
+  strategy_id: string | null;
+  from_strategy_id: string | null;
+  to_strategy_id: string | null;
+  description: string | null;
+}
+
+export interface VaultSnapshot {
+  ts: number;
+  total_equity_usd: number;
+  total_apr: number | null;
+  apr_30d: number | null;
+  apr_7d: number | null;
+  strategy_weights: Record<string, number> | null;
+}
+
+export interface StrategyDetail {
+  strategy_id: string;
+  name: string;
+  type: string;
+  status: string;
+  target_weight_pct: number | null;
+  equity_usd: number | null;
+  apr_since_inception: number | null;
+  apr_30d: number | null;
+  apr_7d: number | null;
+  equity_breakdown: Record<string, unknown> | null;
+  wallets: { wallet_label: string; venue: string }[] | null;
+}
+
+// ============================================================
+// Candidates — GET /api/candidates
+// ============================================================
+
+export interface Candidate {
+  rank: number;
+  symbol: string;
+  venue: string;
+  apr_14d: number | null;
+  apr_7d: number | null;
+  apr_1d: number | null;
+  apr_3d: number | null;
+  stability_score: number | null;
+  flags: string;
+  tradeability_status: string;
+}
+
+export interface CandidatesResponse {
+  general: Candidate[];
+  equities: Candidate[];
+  as_of: string;
+  total: number;
+}

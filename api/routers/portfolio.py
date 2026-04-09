@@ -325,10 +325,4 @@ def _account_label(account_id: str) -> str:
             if isinstance(addr, str) and addr.lower() == account_id.lower():
                 return str(w.get("label", account_id[:10]))
 
-    from tracking.position_manager.accounts import get_felix_wallet_address_from_env
-
-    fx = get_felix_wallet_address_from_env()
-    if fx and account_id.lower() == fx:
-        return "felix"
-
     return account_id[:10]

@@ -23,7 +23,6 @@ class DeltaNeutralProvider(EquityProvider):
 
         total_equity = 0.0
         breakdown: dict = {}
-        counted_lower: set[str] = set()
 
         for wallet in wallets:
             # Prefer address directly from strategy config; fall back to resolver lookup
@@ -37,8 +36,6 @@ class DeltaNeutralProvider(EquityProvider):
 
             if not address:
                 continue
-
-            counted_lower.add(str(address).lower())
 
             row = db.execute(
                 """

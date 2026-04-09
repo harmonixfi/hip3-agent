@@ -119,7 +119,7 @@
         "side": "LONG",
         "qty": 13.191550167850779,
         "qty_type": "token",
-        "wallet_label": "alt"
+        "wallet_label": "felix"
       },
       {
         "leg_id": "pos_xyz_MU_PERP",
@@ -171,7 +171,7 @@
         "side": "LONG",
         "qty": 39.082,
         "qty_type": "token",
-        "wallet_label": "alt"
+        "wallet_label": "felix"
       },
       {
         "leg_id": "pos_xyz_MSTR_PERP",

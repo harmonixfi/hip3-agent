@@ -1,3 +1,9 @@
+> **SUPERSEDED** by `docs/superpowers/specs/2026-04-09-dn-equity-config-driven-design.md` (2026-04-09).
+> Felix is NOT part of Delta Neutral strategy — it belongs to Lending/Depeg.
+> The Felix-in-DN approach described below was implemented then reverted.
+
+---
+
 # Delta-Neutral Equity — Hyperliquid + Felix — Design Spec
 
 **Date:** 2026-04-07  

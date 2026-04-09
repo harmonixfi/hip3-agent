@@ -46,10 +46,24 @@ class DeltaNeutralProvider(EquityProvider):
                 (address, venue),
             ).fetchone()
 
-            if row:
-                equity = float(row[0]) if row[0] is not None else 0.0
+            vnorm = (venue or "").strip().lower()
+
+            equity = 0.0
+            if row and row[0] is not None:
+                equity = float(row[0])
+
+            # Felix: snapshot may be missing before puller runs — use open-leg notional (same as env fallback)
+            if vnorm == "felix" and equity <= 1e-9:
+                leg_usd = _felix_open_leg_notional_usd(db)
+                if leg_usd > 1e-9:
+                    equity = leg_usd
+
+            # Non-Felix: only count wallets that have at least one snapshot (legacy behavior).
+            # Felix: always show in breakdown when declared in strategies.json so DN total includes Felix.
+            if vnorm == "felix" or row:
                 total_equity += equity
                 breakdown[label] = {"address": address, "equity_usd": equity, "venue": venue}
+                counted_lower.add(str(address).lower())
 
         return StrategyEquity(
             equity_usd=total_equity,

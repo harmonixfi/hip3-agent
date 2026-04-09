@@ -9,7 +9,12 @@
       "wallets": [],
       "target_weight_pct": 50.0,
       "config": {
-        "lending_accounts": ["0x0BdFcFbd77c0f3170aC5231480BbB1E45eEBa9ae"]
+        "lending_accounts": ["0x0BdFcFbd77c0f3170aC5231480BbB1E45eEBa9ae"],
+        "erc4626_vault_addresses": [
+          "0x808F72b6Ff632fba005C88b49C2a76AB01CAB545",
+          "0x274f854b2042DB1aA4d6C6E45af73588BEd4Fc9D",
+          "0x8A862fD6c12f9ad34C9c2ff45AB2b6712e8CEa27"
+        ]
       }
     },
     {
@@ -19,6 +24,7 @@
       "status": "ACTIVE",
       "wallets": [
         {"label": "alt",  "venue": "hyperliquid", "address": "0x3c2c0B452B465c595fE106Ef40c55Bf4383D2453"},
+        {"label": "felix", "venue": "felix", "address": "0xB89E2baA058d980347e5963E6d2111B540d45158"},
         {"label": "commodity", "venue": "hyperliquid", "address": "0xd4737Ef74fC7bB5932cE917cF51B2E1A0263210a"},
         {"label": "main", "venue": "hyperliquid", "address": "0x4Fde618c143640638433a1f00431C6B49bb08322"}
       ],

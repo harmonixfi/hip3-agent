@@ -321,7 +321,7 @@
   },
   {
     "position_id": "pos_commodity_OIL_BRENTOIL",
-    "strategy_type": "SPOT_PERP",
+    "strategy_type": "PERP_PERP",
     "base": "OIL_BRENTOIL",
     "status": "OPEN",
     "amount_usd": 4389.20,

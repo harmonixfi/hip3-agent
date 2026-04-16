@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ApiError, fetchVaultStrategyDetail } from "@/lib/api";
 import { formatUSD, formatPct } from "@/lib/format";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 interface Props {
   params: { id: string };

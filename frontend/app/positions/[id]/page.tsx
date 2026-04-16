@@ -6,7 +6,7 @@ import SpreadDisplay from "@/components/SpreadDisplay";
 import CashflowTable from "@/components/CashflowTable";
 import FillsTable from "@/components/FillsTable";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 interface Props {
   params: Promise<{ id: string }>;

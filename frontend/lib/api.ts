@@ -54,8 +54,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       ...headers,
       ...options?.headers,
     },
-    // Revalidate every 60 seconds (ISR-style caching for server components)
-    next: { revalidate: 60 },
+    cache: "no-store",
   });
 
   if (!res.ok) {

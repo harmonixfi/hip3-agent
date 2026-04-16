@@ -2,7 +2,7 @@ import { getHealth } from "@/lib/api";
 import { formatRelative } from "@/lib/format";
 import SettingsManualCashflowSection from "@/components/SettingsManualCashflowSection";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   let health;

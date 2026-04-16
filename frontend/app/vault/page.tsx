@@ -8,7 +8,7 @@ import StrategyTable from "@/components/StrategyTable";
 import AllocationBar from "@/components/AllocationBar";
 import { formatUSD, formatPct } from "@/lib/format";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export default async function VaultPage() {
   let overview = null;

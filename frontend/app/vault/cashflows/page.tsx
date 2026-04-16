@@ -2,7 +2,7 @@ import Link from "next/link";
 import { fetchVaultCashflows } from "@/lib/api";
 import CashflowForm from "@/components/CashflowForm";
 
-export const revalidate = 30;
+export const dynamic = "force-dynamic";
 
 export default async function VaultCashflowsPage() {
   let rows = null;

@@ -1,7 +1,7 @@
 import { getClosedPositions } from "@/lib/api";
 import ClosedPositionsClient from "@/components/ClosedPositionsClient";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export default async function ClosedPositionsPage() {
   let closedPositions;

@@ -110,7 +110,7 @@
     "position_id": "pos_xyz_MU",
     "strategy_type": "SPOT_PERP",
     "base": "MU",
-    "status": "OPEN",
+    "status": "CLOSED",
     "legs": [
       {
         "leg_id": "pos_xyz_MU_FELIX",
@@ -162,7 +162,7 @@
     "position_id": "pos_xyz_MSTR",
     "strategy_type": "SPOT_PERP",
     "base": "MSTR",
-    "status": "OPEN",
+    "status": "CLOSED",
     "legs": [
       {
         "leg_id": "pos_xyz_MSTR_FELIX",

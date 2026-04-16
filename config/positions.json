@@ -324,14 +324,14 @@
     "strategy_type": "SPOT_PERP",
     "base": "OIL_BRENTOIL",
     "status": "OPEN",
-    "amount_usd": 9445.47,
+    "amount_usd": 4389.20,
     "legs": [
       {
         "leg_id": "pos_commodity_OIL_FLX",
         "venue": "hyperliquid",
         "inst_id": "flx:OIL",
-        "side": "LONG",
-        "qty": 52.452,
+        "side": "SHORT",
+        "qty": 25.011,
         "qty_type": "token",
         "wallet_label": "commodity"
       },
@@ -340,7 +340,7 @@
         "venue": "hyperliquid",
         "inst_id": "xyz:BRENTOIL",
         "side": "LONG",
-        "qty": 50.35,
+        "qty": 24.07,
         "qty_type": "token",
         "wallet_label": "commodity"
       }

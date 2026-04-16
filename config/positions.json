@@ -215,7 +215,7 @@
     "position_id": "pos_hyna_HYPE",
     "strategy_type": "SPOT_PERP",
     "base": "HYPE",
-    "status": "OPEN",
+    "status": "CLOSED",
     "amount_usd": 5071.13,
     "legs": [
       {

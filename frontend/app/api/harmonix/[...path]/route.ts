@@ -21,6 +21,14 @@ export async function POST(request: NextRequest, ctx: RouteCtx) {
   return proxy(request, "POST", ctx);
 }
 
+export async function PATCH(request: NextRequest, ctx: RouteCtx) {
+  return proxy(request, "PATCH", ctx);
+}
+
+export async function DELETE(request: NextRequest, ctx: RouteCtx) {
+  return proxy(request, "DELETE", ctx);
+}
+
 async function proxy(request: NextRequest, method: string, ctx: RouteCtx) {
   const apiBase = process.env.API_BASE_URL?.replace(/\/$/, "");
   const apiKey = process.env.API_KEY;
@@ -47,7 +55,7 @@ async function proxy(request: NextRequest, method: string, ctx: RouteCtx) {
   }
 
   const init: RequestInit = { method, headers };
-  if (method === "POST") {
+  if (method === "POST" || method === "PATCH") {
     init.body = await request.text();
   }
 

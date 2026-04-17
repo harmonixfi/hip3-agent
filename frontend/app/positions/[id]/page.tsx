@@ -5,6 +5,7 @@ import LegDetail from "@/components/LegDetail";
 import SpreadDisplay from "@/components/SpreadDisplay";
 import CashflowTable from "@/components/CashflowTable";
 import FillsTable from "@/components/FillsTable";
+import PositionTradesPanel from "@/components/PositionTradesPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -135,6 +136,9 @@ export default async function PositionDetailPage({ params }: Props) {
 
       {/* Fills */}
       <FillsTable fills={fills.fills} total={fills.total} />
+
+      {/* Trades */}
+      <PositionTradesPanel positionId={id} />
     </div>
   );
 }

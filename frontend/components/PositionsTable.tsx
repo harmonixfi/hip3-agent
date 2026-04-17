@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatUSD, formatPct, formatBps, pnlColor } from "@/lib/format";
 import { avgSubPairBps } from "@/lib/subPairStats";
 import type { Position, WindowedMetrics } from "@/lib/types";
+import NewPositionModal from "./NewPositionModal";
 
 interface Props {
   positions: Position[];
@@ -22,6 +23,7 @@ type SortKey =
 export default function PositionsTable({ positions }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("base");
   const [sortAsc, setSortAsc] = useState(true);
+  const [showNewPos, setShowNewPos] = useState(false);
 
   const totalNotional = positions.reduce((sum, p) => sum + (p.amount_usd ?? 0), 0);
 
@@ -195,8 +197,16 @@ export default function PositionsTable({ positions }: Props) {
 
   return (
     <div className="card">
-      <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">
-        Open Positions
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs text-gray-500 uppercase tracking-wide">
+          Open Positions
+        </div>
+        <button
+          onClick={() => setShowNewPos(true)}
+          className="rounded bg-blue-600 px-3 py-1 text-white text-sm hover:bg-blue-700"
+        >
+          + New Position
+        </button>
       </div>
       <div className="overflow-x-auto">
         <table className="data-table">
@@ -295,6 +305,15 @@ export default function PositionsTable({ positions }: Props) {
           </tbody>
         </table>
       </div>
+      {showNewPos && (
+        <NewPositionModal
+          onClose={() => setShowNewPos(false)}
+          onSaved={() => {
+            setShowNewPos(false);
+            window.location.reload();
+          }}
+        />
+      )}
     </div>
   );
 }

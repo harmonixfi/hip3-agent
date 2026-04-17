@@ -101,3 +101,56 @@ def test_side_for_invalid_type_raises():
         side_for("ADD", "LONG")
     with pytest.raises(ValueError):
         side_for("OPEN", "BOTH")
+
+
+# ---------------------------------------------------------------------------
+# A3: Trade ID + window overlap tests
+# ---------------------------------------------------------------------------
+
+from tracking.pipeline.trades import (
+    resolve_trade_id,
+    overlaps,
+    TradeWindow,
+)
+from datetime import datetime
+
+
+def test_resolve_trade_id_basic():
+    ts_ms = int(datetime(2026, 4, 17, 10, 0).timestamp() * 1000)
+    existing = set()
+    assert resolve_trade_id("GOOGL", "OPEN", ts_ms, existing) == "trd_GOOGL_202604171000_open"
+
+
+def test_resolve_trade_id_collision_suffixed():
+    ts_ms = int(datetime(2026, 4, 17, 10, 0).timestamp() * 1000)
+    existing = {"trd_GOOGL_202604171000_open"}
+    assert resolve_trade_id("GOOGL", "OPEN", ts_ms, existing) == "trd_GOOGL_202604171000_open_2"
+
+
+def test_resolve_trade_id_close_type():
+    ts_ms = int(datetime(2026, 4, 17, 11, 30).timestamp() * 1000)
+    assert resolve_trade_id("MSFT", "CLOSE", ts_ms, set()) == "trd_MSFT_202604171130_close"
+
+
+def test_overlaps_disjoint_false():
+    a = TradeWindow(start_ts=100, end_ts=200)
+    b = TradeWindow(start_ts=300, end_ts=400)
+    assert overlaps(a, b) is False
+
+
+def test_overlaps_touching_edge_false():
+    a = TradeWindow(start_ts=100, end_ts=200)
+    b = TradeWindow(start_ts=200, end_ts=300)
+    assert overlaps(a, b) is False
+
+
+def test_overlaps_contained_true():
+    a = TradeWindow(start_ts=100, end_ts=400)
+    b = TradeWindow(start_ts=200, end_ts=300)
+    assert overlaps(a, b) is True
+
+
+def test_overlaps_partial_true():
+    a = TradeWindow(start_ts=100, end_ts=250)
+    b = TradeWindow(start_ts=200, end_ts=300)
+    assert overlaps(a, b) is True

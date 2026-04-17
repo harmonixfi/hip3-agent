@@ -5,6 +5,7 @@ Pure math first (this file); DB I/O layered on top in later tasks.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Iterable, List, Optional, Tuple
 
 
@@ -114,3 +115,42 @@ def side_for(trade_type: str, leg_side: str) -> str:
         return "BUY" if leg_side == "LONG" else "SELL"
     # CLOSE
     return "SELL" if leg_side == "LONG" else "BUY"
+
+
+# ---------------------------------------------------------------------------
+# Trade ID + window helpers (pure)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TradeWindow:
+    """Half-open interval [start_ts, end_ts) in epoch ms."""
+    start_ts: int
+    end_ts: int
+
+
+def overlaps(a: TradeWindow, b: TradeWindow) -> bool:
+    """True iff half-open intervals overlap. Touching edges do not overlap."""
+    return a.start_ts < b.end_ts and b.start_ts < a.end_ts
+
+
+def resolve_trade_id(
+    base: str,
+    trade_type: str,
+    anchor_ts_ms: int,
+    existing_ids: set[str],
+) -> str:
+    """Generate deterministic trade_id.
+
+    Format: trd_<base>_<YYYYMMDDHHmm>_<open|close>[_<n>]
+    Suffix _2, _3, ... on collision.
+    """
+    dt = datetime.fromtimestamp(anchor_ts_ms / 1000)
+    stamp = dt.strftime("%Y%m%d%H%M")
+    base_id = f"trd_{base}_{stamp}_{trade_type.lower()}"
+    if base_id not in existing_ids:
+        return base_id
+    n = 2
+    while f"{base_id}_{n}" in existing_ids:
+        n += 1
+    return f"{base_id}_{n}"

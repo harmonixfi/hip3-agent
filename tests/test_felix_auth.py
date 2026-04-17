@@ -15,52 +15,12 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 from tracking.connectors.felix_auth import (
-    generate_p256_session_keypair,
-    get_p256_public_key_hex,
-    serialize_p256_private_key_pem,
-    deserialize_p256_private_key_pem,
     sign_with_secp256k1,
     build_x_stamp_header,
     build_stamp_login_body,
     parse_stamp_login_response,
     FelixSession,
 )
-
-
-def test_generate_p256_keypair():
-    """P-256 keypair generation produces valid key objects."""
-    from cryptography.hazmat.primitives.asymmetric import ec
-
-    private_key = generate_p256_session_keypair()
-    assert isinstance(private_key, ec.EllipticCurvePrivateKey)
-    assert isinstance(private_key.curve, ec.SECP256R1)
-
-    # Public key should be extractable
-    pub = private_key.public_key()
-    assert isinstance(pub, ec.EllipticCurvePublicKey)
-
-
-def test_p256_public_key_hex():
-    """P-256 public key hex is uncompressed format (65 bytes = 130 hex chars)."""
-    private_key = generate_p256_session_keypair()
-    hex_str = get_p256_public_key_hex(private_key)
-
-    # Uncompressed P-256 public key: 04 || x (32 bytes) || y (32 bytes) = 65 bytes
-    assert len(hex_str) == 130
-    assert hex_str.startswith("04")
-
-
-def test_p256_key_serialization_roundtrip():
-    """P-256 private key survives PEM serialization roundtrip."""
-    original = generate_p256_session_keypair()
-    pem = serialize_p256_private_key_pem(original)
-
-    assert isinstance(pem, str)
-    assert "BEGIN EC PRIVATE KEY" in pem
-
-    restored = deserialize_p256_private_key_pem(pem)
-    # Verify same public key
-    assert get_p256_public_key_hex(original) == get_p256_public_key_hex(restored)
 
 
 def test_sign_with_secp256k1():
@@ -100,26 +60,25 @@ def test_build_x_stamp_header():
 
 
 def test_build_stamp_login_body():
-    """stamp_login body has correct structure."""
-    p256_key = generate_p256_session_keypair()
-    p256_pub_hex = get_p256_public_key_hex(p256_key)
+    """stamp_login body uses wallet's compressed secp256k1 pubkey as session identity."""
+    test_key_hex = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
     org_id = "test-org-123"
 
     body = build_stamp_login_body(
         organization_id=org_id,
-        session_public_key_hex=p256_pub_hex,
-        expiration_seconds=900,
+        wallet_private_key_hex=test_key_hex,
     )
 
     parsed = json.loads(body)
     assert parsed["type"] == "ACTIVITY_TYPE_STAMP_LOGIN"
     assert parsed["organizationId"] == org_id
-    assert parsed["parameters"]["publicKey"] == p256_pub_hex
-    assert parsed["parameters"]["expirationSeconds"] == "900"
+    pub_key = parsed["parameters"]["publicKey"]
+    assert len(pub_key) == 66, "publicKey must be compressed secp256k1 (33 bytes = 66 hex)"
+    assert pub_key[:2] in ("02", "03"), "compressed pubkey has 02/03 prefix"
+    assert parsed["parameters"]["expirationSeconds"] == "1209600"
     assert "timestampMs" in parsed
-    # timestampMs should be a string of current-ish epoch ms
     ts = int(parsed["timestampMs"])
-    assert abs(ts - int(time.time() * 1000)) < 5000  # within 5 seconds
+    assert abs(ts - int(time.time() * 1000)) < 5000
 
 
 def test_parse_stamp_login_response_success():
@@ -160,7 +119,6 @@ def test_felix_session_is_expired():
     session = FelixSession(
         jwt="token",
         expires_at=int(time.time()) - 10,  # 10 seconds ago
-        session_key_pem="-----BEGIN EC PRIVATE KEY-----\ntest\n-----END EC PRIVATE KEY-----",
         sub_org_id="org_123",
     )
     assert session.is_expired()
@@ -168,7 +126,6 @@ def test_felix_session_is_expired():
     session2 = FelixSession(
         jwt="token",
         expires_at=int(time.time()) + 600,  # 10 minutes from now
-        session_key_pem="-----BEGIN EC PRIVATE KEY-----\ntest\n-----END EC PRIVATE KEY-----",
         sub_org_id="org_123",
     )
     assert not session2.is_expired()
@@ -178,16 +135,14 @@ def test_felix_session_needs_refresh():
     """FelixSession reports needing refresh when <2 minutes remain."""
     session = FelixSession(
         jwt="token",
-        expires_at=int(time.time()) + 60,  # 1 minute from now — needs refresh
-        session_key_pem="-----BEGIN EC PRIVATE KEY-----\ntest\n-----END EC PRIVATE KEY-----",
+        expires_at=int(time.time()) + 3600,  # 1 hour from now — needs refresh since 3600 < 86400
         sub_org_id="org_123",
     )
     assert session.needs_refresh()
 
     session2 = FelixSession(
         jwt="token",
-        expires_at=int(time.time()) + 600,  # 10 minutes — no refresh needed
-        session_key_pem="-----BEGIN EC PRIVATE KEY-----\ntest\n-----END EC PRIVATE KEY-----",
+        expires_at=int(time.time()) + 90000,  # >86400s — no refresh needed
         sub_org_id="org_123",
     )
     assert not session2.needs_refresh()
@@ -198,7 +153,6 @@ def test_felix_session_serialization():
     session = FelixSession(
         jwt="eyJ.test.sig",
         expires_at=1711900000,
-        session_key_pem="-----BEGIN EC PRIVATE KEY-----\nABC\n-----END EC PRIVATE KEY-----",
         sub_org_id="org_abc",
     )
     data = session.to_dict()
@@ -208,17 +162,10 @@ def test_felix_session_serialization():
     restored = FelixSession.from_dict(data)
     assert restored.jwt == session.jwt
     assert restored.expires_at == session.expires_at
-    assert restored.session_key_pem == session.session_key_pem
     assert restored.sub_org_id == session.sub_org_id
 
 
 def main() -> int:
-    test_generate_p256_keypair()
-    print("PASS: test_generate_p256_keypair")
-    test_p256_public_key_hex()
-    print("PASS: test_p256_public_key_hex")
-    test_p256_key_serialization_roundtrip()
-    print("PASS: test_p256_key_serialization_roundtrip")
     test_sign_with_secp256k1()
     print("PASS: test_sign_with_secp256k1")
     test_build_x_stamp_header()

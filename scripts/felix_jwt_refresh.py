@@ -2,7 +2,7 @@
 """Felix JWT auto-refresh cron script.
 
 Run every 14 minutes via systemd timer or crontab:
-    */14 * * * * cd $WORKSPACE && source .arbit_env && .venv/bin/python scripts/felix_jwt_refresh.py >> logs/felix_jwt.log 2>&1
+    0 */12 * * * cd $WORKSPACE && source .arbit_env && .venv/bin/python scripts/felix_jwt_refresh.py >> logs/felix_jwt.log 2>&1
 
 Flow:
 1. Load wallet private key from vault
@@ -167,6 +167,31 @@ def _save_session(session: FelixSession) -> None:
         log.warning("Session saved as PLAINTEXT (sops failed)")
 
 
+def _update_jwt_expiry_in_secrets(expires_at: int) -> None:
+    """Write felix_jwt_expires_at to vault/secrets.enc.json for the health UI."""
+    secrets_file = VAULT_DIR / "secrets.enc.json"
+    if not secrets_file.exists():
+        return
+
+    expiry_str = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(expires_at))
+    try:
+        subprocess.run(
+            [
+                "sops", "set", str(secrets_file),
+                '["felix_jwt_expires_at"]',
+                json.dumps(expiry_str),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        log.info("Updated felix_jwt_expires_at in secrets: %s", expiry_str)
+    except FileNotFoundError:
+        pass  # sops not installed
+    except subprocess.CalledProcessError as e:
+        log.warning("Failed to update felix_jwt_expires_at: %s", e.stderr)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -200,6 +225,7 @@ def main() -> int:
         try:
             new_session = refresh_session(session, wallet_key)
             _save_session(new_session)
+            _update_jwt_expiry_in_secrets(new_session.expires_at)
             log.info(
                 "JWT refreshed successfully. Expires at %s (in %d seconds).",
                 time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(new_session.expires_at)),
@@ -221,6 +247,7 @@ def main() -> int:
             sub_org_id=sub_org_id,
         )
         _save_session(new_session)
+        _update_jwt_expiry_in_secrets(new_session.expires_at)
         log.info(
             "Initial login successful. JWT expires at %s (in %d seconds).",
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(new_session.expires_at)),

@@ -145,7 +145,7 @@ def resolve_trade_id(
     Format: trd_<base>_<YYYYMMDDHHmm>_<open|close>[_<n>]
     Suffix _2, _3, ... on collision.
     """
-    dt = datetime.fromtimestamp(anchor_ts_ms / 1000)
+    dt = datetime.fromtimestamp(anchor_ts_ms / 1000, tz=timezone.utc)
     stamp = dt.strftime("%Y%m%d%H%M")
     base_id = f"trd_{base}_{stamp}_{trade_type.lower()}"
     if base_id not in existing_ids:

@@ -112,23 +112,23 @@ from tracking.pipeline.trades import (
     overlaps,
     TradeWindow,
 )
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def test_resolve_trade_id_basic():
-    ts_ms = int(datetime(2026, 4, 17, 10, 0).timestamp() * 1000)
+    ts_ms = int(datetime(2026, 4, 17, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)
     existing = set()
     assert resolve_trade_id("GOOGL", "OPEN", ts_ms, existing) == "trd_GOOGL_202604171000_open"
 
 
 def test_resolve_trade_id_collision_suffixed():
-    ts_ms = int(datetime(2026, 4, 17, 10, 0).timestamp() * 1000)
+    ts_ms = int(datetime(2026, 4, 17, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)
     existing = {"trd_GOOGL_202604171000_open"}
     assert resolve_trade_id("GOOGL", "OPEN", ts_ms, existing) == "trd_GOOGL_202604171000_open_2"
 
 
 def test_resolve_trade_id_close_type():
-    ts_ms = int(datetime(2026, 4, 17, 11, 30).timestamp() * 1000)
+    ts_ms = int(datetime(2026, 4, 17, 11, 30, tzinfo=timezone.utc).timestamp() * 1000)
     assert resolve_trade_id("MSFT", "CLOSE", ts_ms, set()) == "trd_MSFT_202604171130_close"
 
 

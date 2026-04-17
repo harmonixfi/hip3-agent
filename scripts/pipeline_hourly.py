@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sqlite3
 import sys
 import time
@@ -151,6 +152,18 @@ def step_vault_snapshot(con: sqlite3.Connection) -> dict:
     return run_daily_snapshot(con)
 
 
+def step_trade_reconcile(con: sqlite3.Connection) -> dict:
+    """Reconcile DRAFT trades + update FINALIZED warnings (flag-gated).
+
+    Only fires when TRADES_LAYER_ENABLED=true; otherwise skipped to preserve
+    legacy pipeline behavior until the layer is fully validated.
+    """
+    # Lazy import so loading the script doesn't fail in environments where the
+    # new module is unavailable (e.g. before the trade layer is deployed).
+    from tracking.pipeline.trade_reconcile import run_reconcile
+    return run_reconcile(con)
+
+
 # ---------------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------------
@@ -187,6 +200,12 @@ def run_pipeline(
             spot_index_map if spot_index_map is not None else {},
             since_ms,
         )
+
+    # Step 2b: Trade reconcile (flag-gated — no-op when TRADES_LAYER_ENABLED != true)
+    # Runs after fill ingestion so it sees the latest fills, and before
+    # entry-price computation which will eventually consume the trade layer.
+    if os.getenv("TRADES_LAYER_ENABLED", "false").lower() == "true":
+        _run_step("trade_reconcile", step_trade_reconcile, con)
 
     # Step 3: Entry prices (VWAP)
     _run_step("entry_prices", step_entry_prices, con)

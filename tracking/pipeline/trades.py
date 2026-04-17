@@ -370,10 +370,15 @@ def create_draft_trade(
 def _update_leg_sizes_and_position_status(con: sqlite3.Connection, position_id: str) -> None:
     """Recompute pm_legs.size and pm_positions.status from FINALIZED trades.
 
+    Leg sizes are factual and always updated. Position status is a derived
+    view that respects manual operator overrides (PAUSED, EXITING) — those
+    statuses are preserved even when leg sizes would suggest a transition.
+
     Net size per leg = SUM(FINALIZED OPEN.{long|short}_size) - SUM(FINALIZED CLOSE.{long|short}_size).
-    Status transitions (manual PAUSED/EXITING overrides preserved):
+    Automatic status transitions:
       - any FINALIZED OPEN exists AND net size > 0 on any leg → OPEN
       - all leg sizes == 0 AND ≥1 FINALIZED CLOSE → CLOSED
+      - otherwise: status unchanged.
     """
     legs = _fetch_position_legs(con, position_id)
 
@@ -560,6 +565,8 @@ def finalize_trade(con: sqlite3.Connection, trade_id: str) -> Dict[str, Any]:
             )
 
     if trade_type == "CLOSE":
+        # Requires at least one FINALIZED OPEN with spread_bps IS NOT NULL
+        # (degenerate OPEN trades with null spread cannot anchor realized P&L).
         if not _fetch_finalized_open_spreads(con, position_id):
             raise TradeCreateError(
                 "cannot finalize CLOSE: no FINALIZED OPEN trades on position"

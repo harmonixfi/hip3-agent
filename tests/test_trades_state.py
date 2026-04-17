@@ -287,3 +287,21 @@ def test_close_realized_pnl_after_open_finalized(con):
     # open spread ≈ -97.85 bps; close spread = (110/108 - 1) * 10000 ≈ 185.19 bps
     # realized = open - close = -97.85 - 185.19 ≈ -283.04 bps
     assert t_close["realized_pnl_bps"] == pytest.approx(-283.0, abs=0.5)
+
+
+def test_reopen_rejects_draft(con):
+    t = create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+    with pytest.raises(TradeCreateError, match="not FINALIZED"):
+        reopen_trade(con, t["trade_id"])
+
+
+def test_delete_rejects_unknown_trade(con):
+    with pytest.raises(TradeCreateError, match="not found"):
+        delete_trade(con, "trd_does_not_exist")
+
+
+def test_recompute_rejects_finalized(con):
+    t = create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+    finalize_trade(con, t["trade_id"])
+    with pytest.raises(TradeCreateError, match="not DRAFT"):
+        recompute_trade(con, t["trade_id"])

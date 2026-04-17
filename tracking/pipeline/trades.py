@@ -333,7 +333,9 @@ def create_draft_trade(
             (trade_id, f.fill_id),
         )
 
-    con.commit()
+    # NOTE: caller is responsible for committing (or rolling back via SAVEPOINT).
+    # Do NOT call con.commit() here — the preview endpoint wraps this in a
+    # SAVEPOINT/ROLLBACK TO pattern that requires no intervening commit.
 
     return {
         "trade_id": trade_id,

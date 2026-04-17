@@ -161,6 +161,7 @@ def create_trade(
         )
     except TradeCreateError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    db.commit()
     return _dict_to_item(result)
 
 

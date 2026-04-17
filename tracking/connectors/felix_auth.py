@@ -261,9 +261,16 @@ def _turnkey_post(
         data=body_bytes,
         headers={
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": "*/*",
+            "Origin": "https://trade.usefelix.xyz",
+            "Referer": "https://trade.usefelix.xyz/",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/147.0.0.0 Safari/537.36"
+            ),
             "X-Stamp": stamp,
-            "User-Agent": "arbit-felix-auth/0.1",
+            "x-client-version": "@turnkey/core@1.11.0",
         },
         method="POST",
     )
@@ -311,7 +318,14 @@ def lookup_sub_org(wallet_private_key_hex: str) -> str:
         data=body,
         headers={
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": "*/*",
+            "Origin": "https://trade.usefelix.xyz",
+            "Referer": "https://trade.usefelix.xyz/",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/147.0.0.0 Safari/537.36"
+            ),
             "x-auth-proxy-config-id": FELIX_AUTH_PROXY_CONFIG,
         },
         method="POST",

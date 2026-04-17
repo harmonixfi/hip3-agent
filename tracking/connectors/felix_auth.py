@@ -110,10 +110,10 @@ def _get_secp256k1_public_key_hex_compressed(private_key: ec.EllipticCurvePrivat
 
 
 def sign_with_secp256k1(wallet_private_key_hex: str, message: bytes) -> str:
-    """Sign a message with secp256k1 private key, return DER-encoded signature as hex.
+    """Sign message with secp256k1 private key, return DER-encoded signature as hex.
 
-    The signature is over SHA256(message), using ECDSA with secp256k1.
-    Returns the DER-encoded signature as a hex string.
+    Uses SHA256+ECDSA. This is NOT used for Turnkey stamp auth (which uses EIP-191
+    via eth_account). Retained as a utility for direct signing use cases.
     """
     private_key = _load_secp256k1_private_key(wallet_private_key_hex)
     signature_der = private_key.sign(
@@ -406,8 +406,13 @@ def refresh_session(
     session: FelixSession,
     wallet_private_key_hex: str,
 ) -> FelixSession:
-    """Refresh Felix session by re-running stamp_login with the wallet key."""
+    """Refresh Felix session by re-running stamp_login with the wallet key.
+
+    After removing the P-256 session keypair, refresh is equivalent to
+    initial_login with the sub_org_id already known (skips the lookup step).
+    """
     log.info("Felix auth: Turnkey stamp_login refresh (sub_org_id=%s)", session.sub_org_id)
+    # refresh_session re-runs stamp_login with cached sub_org_id (no lookup)
     return initial_login(
         wallet_private_key_hex,
         sub_org_id=session.sub_org_id,

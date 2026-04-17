@@ -43,7 +43,6 @@ from tracking.connectors.felix_auth import (
 
 VAULT_DIR = ROOT / "vault"
 SESSION_FILE = VAULT_DIR / "felix_session.enc.json"
-SESSION_FILE_PLAIN = VAULT_DIR / "felix_session.dec.json"  # temporary, deleted after use
 
 LOG_FMT = "%(asctime)s [felix_jwt] %(levelname)s %(message)s"
 logging.basicConfig(format=LOG_FMT, level=logging.INFO, stream=sys.stdout)
@@ -222,6 +221,7 @@ def main() -> int:
     if session and not session.is_expired():
         # Session exists and is not fully expired — try refresh
         log.info("Session needs refresh (sub-org: %s)...", session.sub_org_id)
+        # refresh_session re-runs stamp_login with cached sub_org_id (no lookup)
         try:
             new_session = refresh_session(session, wallet_key)
             _save_session(new_session)

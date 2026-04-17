@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import sys
 import time
@@ -130,7 +129,7 @@ def test_felix_session_is_expired():
 
 
 def test_felix_session_needs_refresh():
-    """FelixSession reports needing refresh when <2 minutes remain."""
+    """FelixSession reports needing refresh when <24 hours remain."""
     session = FelixSession(
         jwt="token",
         expires_at=int(time.time()) + 3600,  # 1 hour from now — needs refresh since 3600 < 86400

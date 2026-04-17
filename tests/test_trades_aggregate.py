@@ -141,6 +141,7 @@ def test_overlaps_disjoint_false():
 def test_overlaps_touching_edge_false():
     a = TradeWindow(start_ts=100, end_ts=200)
     b = TradeWindow(start_ts=200, end_ts=300)
+    # end of a == start of b is NOT overlap (half-open intervals)
     assert overlaps(a, b) is False
 
 
@@ -154,3 +155,39 @@ def test_overlaps_partial_true():
     a = TradeWindow(start_ts=100, end_ts=250)
     b = TradeWindow(start_ts=200, end_ts=300)
     assert overlaps(a, b) is True
+
+
+def test_resolve_trade_id_double_collision():
+    ts_ms = int(datetime(2026, 4, 17, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    existing = {
+        "trd_GOOGL_202604171000_open",
+        "trd_GOOGL_202604171000_open_2",
+    }
+    assert resolve_trade_id("GOOGL", "OPEN", ts_ms, existing) == "trd_GOOGL_202604171000_open_3"
+
+
+def test_resolve_trade_id_invalid_trade_type_raises():
+    ts_ms = int(datetime(2026, 4, 17, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    with pytest.raises(ValueError, match="invalid trade_type"):
+        resolve_trade_id("GOOGL", "ADD", ts_ms, set())
+
+
+def test_resolve_trade_id_invalid_base_raises():
+    ts_ms = int(datetime(2026, 4, 17, 10, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    with pytest.raises(ValueError, match="invalid base"):
+        resolve_trade_id("BTC_USD", "OPEN", ts_ms, set())  # underscore disallowed
+    with pytest.raises(ValueError, match="invalid base"):
+        resolve_trade_id("", "OPEN", ts_ms, set())
+    with pytest.raises(ValueError, match="invalid base"):
+        resolve_trade_id("BTC/USD", "OPEN", ts_ms, set())  # slash disallowed
+
+
+def test_overlaps_identical_windows_true():
+    w = TradeWindow(start_ts=100, end_ts=200)
+    assert overlaps(w, w) is True
+
+
+def test_overlaps_zero_width_window_false():
+    a = TradeWindow(start_ts=100, end_ts=200)
+    b = TradeWindow(start_ts=150, end_ts=150)  # zero-width → empty set
+    assert overlaps(a, b) is False

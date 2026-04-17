@@ -4,6 +4,7 @@ Pure math first (this file); DB I/O layered on top in later tasks.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable, List, Optional, Tuple
@@ -130,7 +131,9 @@ class TradeWindow:
 
 
 def overlaps(a: TradeWindow, b: TradeWindow) -> bool:
-    """True iff half-open intervals overlap. Touching edges do not overlap."""
+    """True iff half-open intervals overlap. Touching edges and zero-width intervals do not overlap."""
+    if a.start_ts >= a.end_ts or b.start_ts >= b.end_ts:
+        return False
     return a.start_ts < b.end_ts and b.start_ts < a.end_ts
 
 
@@ -145,6 +148,10 @@ def resolve_trade_id(
     Format: trd_<base>_<YYYYMMDDHHmm>_<open|close>[_<n>]
     Suffix _2, _3, ... on collision.
     """
+    if trade_type not in VALID_TYPES:
+        raise ValueError(f"invalid trade_type: {trade_type}")
+    if not base or not re.fullmatch(r"[A-Za-z0-9-]+", base):
+        raise ValueError(f"invalid base (must be alphanumeric or dashes, non-empty): {base!r}")
     dt = datetime.fromtimestamp(anchor_ts_ms / 1000, tz=timezone.utc)
     stamp = dt.strftime("%Y%m%d%H%M")
     base_id = f"trd_{base}_{stamp}_{trade_type.lower()}"

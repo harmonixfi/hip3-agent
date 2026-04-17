@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Apply monitoring v1 schema migration to arbit_v3.db.
+"""Apply monitoring schema migrations to arbit_v3.db.
 
-Creates new tables: pm_fills, pm_entry_prices, pm_spreads, pm_portfolio_snapshots.
+v1: Creates new tables: pm_fills, pm_entry_prices, pm_spreads, pm_portfolio_snapshots.
+v2: Adds trade aggregation layer: pm_trades, pm_trade_fills, pm_trade_reconcile_warnings.
+    Also extends pm_positions with base and strategy_type columns.
 Also fixes legacy spot inst_ids in pm_legs (e.g., GOOGL -> GOOGL/USDC).
 """
 
@@ -12,15 +14,47 @@ import sqlite3
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-SCHEMA_MONITORING = ROOT / "tracking" / "sql" / "schema_monitoring_v1.sql"
+SCHEMA_MONITORING_V1 = ROOT / "tracking" / "sql" / "schema_monitoring_v1.sql"
+SCHEMA_MONITORING_V2 = ROOT / "tracking" / "sql" / "schema_monitoring_v2.sql"
+# Keep backward-compatible alias
+SCHEMA_MONITORING = SCHEMA_MONITORING_V1
 DEFAULT_DB = ROOT / "tracking" / "db" / "arbit_v3.db"
 
 
+def _apply_sql_file(con: sqlite3.Connection, path: Path, tolerate_duplicate_column: bool = False) -> None:
+    """Apply a SQL file statement by statement.
+
+    When tolerate_duplicate_column=True, silently skip ALTER TABLE statements
+    that fail with 'duplicate column name' (idempotent re-runs).
+    """
+    raw = path.read_text(encoding="utf-8")
+    # Strip single-line comments before splitting on ";" to avoid false splits
+    # inside comment text (e.g. "-- foo; bar" would yield a bogus "bar" statement).
+    lines = [ln for ln in raw.splitlines() if not ln.lstrip().startswith("--")]
+    sql = "\n".join(lines)
+    for stmt in sql.split(";"):
+        stmt = stmt.strip()
+        if not stmt:
+            continue
+        try:
+            con.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if tolerate_duplicate_column and "duplicate column name" in str(e):
+                continue
+            raise
+    con.commit()
+
+
 def apply_schema(con: sqlite3.Connection) -> None:
-    """Apply the monitoring v1 schema."""
-    sql = SCHEMA_MONITORING.read_text(encoding="utf-8")
-    con.executescript(sql)
+    """Apply monitoring v1 and v2 schemas."""
+    # v1: use executescript (no per-statement errors expected; tables are IF NOT EXISTS)
+    sql_v1 = SCHEMA_MONITORING_V1.read_text(encoding="utf-8")
+    con.executescript(sql_v1)
     print("OK: monitoring v1 schema applied")
+
+    # v2: apply statement-by-statement to tolerate duplicate column errors on re-runs
+    _apply_sql_file(con, SCHEMA_MONITORING_V2, tolerate_duplicate_column=True)
+    print("OK: monitoring v2 schema applied")
 
 
 def fix_legacy_spot_inst_ids(con: sqlite3.Connection) -> int:
@@ -63,8 +97,10 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="Show what would change without applying")
     args = ap.parse_args()
 
-    if not SCHEMA_MONITORING.exists():
-        raise SystemExit(f"missing schema: {SCHEMA_MONITORING}")
+    if not SCHEMA_MONITORING_V1.exists():
+        raise SystemExit(f"missing schema: {SCHEMA_MONITORING_V1}")
+    if not SCHEMA_MONITORING_V2.exists():
+        raise SystemExit(f"missing schema: {SCHEMA_MONITORING_V2}")
     if not args.db.exists():
         raise SystemExit(f"DB not found: {args.db}. Run db_v3_init.py first.")
 

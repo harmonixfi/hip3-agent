@@ -85,7 +85,9 @@ def test_reconcile_finalized_raises_warning_not_auto_merge(con):
     )
     con.commit()
 
-    run_reconcile(con)
+    summary = run_reconcile(con)
+    assert summary["warnings_raised"] == 1
+    assert summary["drafts_recomputed"] == 0
 
     # Aggregates unchanged
     long_size = con.execute("SELECT long_size FROM pm_trades WHERE trade_id=?", (tid,)).fetchone()[0]
@@ -156,7 +158,76 @@ def test_reconcile_clears_warning_when_fills_no_longer_orphan(con):
     )
     con.commit()
 
-    run_reconcile(con)
+    summary = run_reconcile(con)
+    assert summary["warnings_cleared"] == 1
     assert con.execute(
         "SELECT unassigned_count FROM pm_trade_reconcile_warnings WHERE trade_id=?", (tid,)
     ).fetchone() is None
+
+
+def test_reconcile_updates_warning_count_on_second_run(con):
+    t = create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+    tid = t["trade_id"]
+    finalize_trade(con, tid)
+
+    # First orphan
+    con.execute(
+        "INSERT INTO pm_fills (venue,account_id,inst_id,side,px,sz,fee,ts,leg_id,position_id) "
+        "VALUES ('hyperliquid','0xMAIN','GOOGL','BUY',105.0,1.0,0.02,1400,'pos_X_SPOT','pos_X')"
+    )
+    con.commit()
+    s1 = run_reconcile(con)
+    assert s1["warnings_raised"] == 1
+    assert con.execute(
+        "SELECT unassigned_count FROM pm_trade_reconcile_warnings WHERE trade_id=?", (tid,)
+    ).fetchone()[0] == 1
+
+    # Second orphan added
+    con.execute(
+        "INSERT INTO pm_fills (venue,account_id,inst_id,side,px,sz,fee,ts,leg_id,position_id) "
+        "VALUES ('hyperliquid','0xMAIN','GOOGL','BUY',106.0,1.0,0.02,1600,'pos_X_SPOT','pos_X')"
+    )
+    con.commit()
+    s2 = run_reconcile(con)
+    # New warning NOT raised (already existed); count updated from 1 -> 2
+    assert s2["warnings_raised"] == 0
+    assert s2["warnings_cleared"] == 0
+    assert con.execute(
+        "SELECT unassigned_count FROM pm_trade_reconcile_warnings WHERE trade_id=?", (tid,)
+    ).fetchone()[0] == 2
+
+
+def test_reconcile_excludes_fills_bound_to_other_trades(con):
+    """An orphan fill bound to a DIFFERENT trade must not inflate this trade's warning."""
+    # Create + finalize trade A
+    tA = create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+    finalize_trade(con, tA["trade_id"])
+
+    # Create a fill in A's window but bind it to a synthetic trade B (not A)
+    con.execute(
+        "INSERT INTO pm_fills (venue,account_id,inst_id,side,px,sz,fee,ts,leg_id,position_id) "
+        "VALUES ('hyperliquid','0xMAIN','GOOGL','BUY',105.0,1.0,0.02,1500,'pos_X_SPOT','pos_X')"
+    )
+    new_fill_id = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    # Insert a dummy 'trade B' row + link the late fill to it
+    now = int(time.time() * 1000)
+    con.execute(
+        "INSERT INTO pm_trades (trade_id, position_id, trade_type, state, start_ts, end_ts, "
+        "long_leg_id, short_leg_id, created_at_ms, computed_at_ms) "
+        "VALUES ('trd_other','pos_X','OPEN','DRAFT',900,2100,'pos_X_SPOT','pos_X_PERP',?,?)",
+        (now, now),
+    )
+    con.execute(
+        "INSERT INTO pm_trade_fills (trade_id, fill_id, leg_side) VALUES ('trd_other', ?, 'LONG')",
+        (new_fill_id,),
+    )
+    con.commit()
+
+    run_reconcile(con)
+    # Trade A should NOT have a warning because the orphan is bound to trade B
+    warn = con.execute(
+        "SELECT unassigned_count FROM pm_trade_reconcile_warnings WHERE trade_id=?",
+        (tA["trade_id"],),
+    ).fetchone()
+    assert warn is None

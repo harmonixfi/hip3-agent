@@ -9,7 +9,7 @@ import sqlite3
 import time
 from typing import Dict
 
-from tracking.pipeline.trades import recompute_trade, side_for
+from tracking.pipeline.trades import TradeCreateError, recompute_trade, side_for
 
 
 def _now_ms() -> int:
@@ -56,8 +56,12 @@ def run_reconcile(con: sqlite3.Connection) -> Dict[str, int]:
         for r in con.execute("SELECT trade_id FROM pm_trades WHERE state = 'DRAFT'").fetchall()
     ]
     for tid in draft_ids:
-        recompute_trade(con, tid)
-        drafts_recomputed += 1
+        try:
+            recompute_trade(con, tid)
+            drafts_recomputed += 1
+        except TradeCreateError:
+            # Trade moved out of DRAFT between snapshot and processing; skip silently.
+            continue
 
     finalized = con.execute(
         "SELECT trade_id, trade_type, start_ts, end_ts, long_leg_id, short_leg_id "

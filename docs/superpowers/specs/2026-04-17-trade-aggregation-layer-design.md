@@ -303,6 +303,26 @@ GET    /api/positions/:id        # extended with derived qty/status/spread
 - Golden: seed DB with production-like `positions.json` + `pm_fills` → run migration → `pm_trades` populated, `pm_legs.qty` within 0.01% of JSON.
 - Idempotency: run migration twice → second run no-op.
 
+### Real-data E2E (against production fill history)
+
+Purpose: validate that the design holds up on actual trading data before shipping, not just synthetic fixtures. Runs in a disposable sqlite DB, read-only against real HL/Felix connectors.
+
+**Harness:** `scripts/e2e_real_fills.py`
+
+1. **Seed:** spin up fresh sqlite at `tracking/db/e2e_<ts>.db` with all schemas applied.
+2. **Ingest real fills:** for each wallet in `HYPERLIQUID_ACCOUNTS_JSON`, call `ingest_hyperliquid_fills(..., include_closed=True)` with `since_ms` covering a known historical window (e.g., 30–90 days back). Same for Felix via `felix_fill_ingester`.
+3. **Import real positions:** run migration script against the current `config/positions.json`; synthesize trades per the Phase 2 plan.
+4. **Validation checks** (each must pass):
+   - **Volume reconciliation:** for every position, `SUM(pm_trades.long_size)` and `SUM(pm_trades.short_size)` across OPEN trades minus CLOSE trades equals the position's recorded final qty from positions.json (tolerance 0.01%). Mismatches logged with position_id, expected vs actual, and the contributing trades.
+   - **Fill coverage:** count of `pm_fills` rows with matching `leg_id` that are *not* linked via `pm_trade_fills` → should be < 5% per position (accounts for fee-only entries, dust, or truly orphan fills from outside the synthesized windows). Print top 10 unassigned fills per position.
+   - **Spread sanity:** for each OPEN trade, `spread_bps` must fall within the historical range recorded in `tracking/journal/` entries for that position (if present) ± 10 bps. For positions without journal ground truth, flag `spread_bps` > 100 bps or < -100 bps for manual review (likely bad window).
+   - **Realized P&L consistency:** `SUM(pm_cashflows.amount WHERE cf_type IN ('REALIZED_PNL','FUNDING'))` for a CLOSED position should be within ±5% of `SUM(close_trade.realized_pnl_bps × notional / 10_000)`. Large discrepancies surface journal discussion.
+   - **Side mapping correctness:** for a sample of 20 linked fills, manually inspect that OPEN+LONG fills are all BUY-side, CLOSE+LONG are all SELL-side, etc.
+5. **Report output:** `docs/tasks/e2e_real_fills_report_YYYYMMDD.md` with tables per position: trade count, volume match, coverage %, spread distribution, P&L delta, unassigned fill examples.
+6. **Gate:** merge blocked until report shows zero volume/side violations and all unassigned fills are explainable (dust, fees, out-of-window).
+
+This is the acceptance test before flipping `TRADES_LAYER_ENABLED=true` in production. Synthetic unit/integration tests prove the math; this step proves the design matches reality.
+
 ### Manual UI smoke (before merge)
 
 - Dev server: create position via UI, create DRAFT trade from existing fills, preview, finalize. Hand-check spread vs manual calc.

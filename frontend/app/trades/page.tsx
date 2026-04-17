@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import TradesTable from "@/components/TradesTable";
+import NewTradeModal from "@/components/NewTradeModal";
 import { listTrades, type Trade, type TradeType, type TradeState } from "@/lib/trades";
 
 export default function TradesPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
   const [positionFilter, setPositionFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<TradeType | "">("");
   const [stateFilter, setStateFilter] = useState<TradeState | "">("");
@@ -39,11 +41,9 @@ export default function TradesPage() {
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Trades</h1>
-        {/* TODO(C4): wire up NewTradeModal */}
         <button
-          disabled
-          className="rounded bg-blue-600 px-4 py-2 text-white opacity-50 cursor-not-allowed"
-          title="New Trade modal coming in Task C4"
+          onClick={() => setShowModal(true)}
+          className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
         >
           + New Trade
         </button>
@@ -75,7 +75,16 @@ export default function TradesPage() {
         </select>
       </div>
       {error && <p className="mb-3 text-red-600">Error: {error}</p>}
-      {loading ? <p>Loading…</p> : <TradesTable trades={trades} />}
+      {loading ? <p>Loading...</p> : <TradesTable trades={trades} />}
+      {showModal && (
+        <NewTradeModal
+          onClose={() => setShowModal(false)}
+          onSaved={() => {
+            setShowModal(false);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }

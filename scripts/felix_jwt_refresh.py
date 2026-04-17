@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Felix JWT auto-refresh cron script.
 
-Run every 14 minutes via systemd timer or crontab:
+Run every 12 hours via crontab:
     0 */12 * * * cd $WORKSPACE && source .arbit_env && .venv/bin/python scripts/felix_jwt_refresh.py >> logs/felix_jwt.log 2>&1
 
 Flow:

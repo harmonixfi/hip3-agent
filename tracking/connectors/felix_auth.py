@@ -174,37 +174,29 @@ def build_x_stamp_header(wallet_private_key_hex: str, body: bytes) -> str:
 
 def build_stamp_login_body(
     *,
-    organization_id: str,
-    wallet_private_key_hex: str,
+    session_public_key_hex: str,
     expiration_seconds: int = JWT_TTL_SECONDS,
     timestamp_ms: Optional[int] = None,
 ) -> str:
     """Build the JSON body for the Turnkey stamp_login request.
 
-    Uses the wallet's compressed secp256k1 pubkey as the session identity,
-    matching @turnkey/wallet-stamper browser behavior.
-
     Args:
-        organization_id: Turnkey sub-org ID
-        wallet_private_key_hex: secp256k1 wallet private key (hex, 64 chars); pubkey used as session identity
-        expiration_seconds: JWT TTL in seconds (default 1209600 = 14 days)
+        session_public_key_hex: compressed secp256k1 pubkey of ephemeral session keypair
+        expiration_seconds: JWT TTL (default 1209600 = 14 days)
         timestamp_ms: override for testing
 
     Returns:
-        compact JSON string for the request body
+        compact JSON string
     """
     if timestamp_ms is None:
         timestamp_ms = int(time.time() * 1000)
 
-    private_key = _load_secp256k1_private_key(wallet_private_key_hex)
-    wallet_pub_hex = _get_secp256k1_public_key_hex_compressed(private_key)
-
     body = {
         "type": "ACTIVITY_TYPE_STAMP_LOGIN",
         "timestampMs": str(timestamp_ms),
-        "organizationId": organization_id,
+        "organizationId": FELIX_ORG_ID,  # always ROOT org, Turnkey routes to sub-org via X-Stamp
         "parameters": {
-            "publicKey": wallet_pub_hex,
+            "publicKey": session_public_key_hex,
             "expirationSeconds": str(expiration_seconds),
         },
     }
@@ -299,55 +291,53 @@ def _turnkey_post(
         raise
 
 
-def lookup_sub_org(
-    wallet_address: str,
-    wallet_private_key_hex: str,
-    *,
-    root_org_id: str = FELIX_ORG_ID,
-) -> str:
-    """Look up the Turnkey sub-organization ID for a wallet address.
+def lookup_sub_org(wallet_private_key_hex: str) -> str:
+    """Look up the Turnkey sub-organization ID via Felix auth proxy.
 
-    Args:
-        wallet_address: Ethereum wallet address (0x...)
-        wallet_private_key_hex: wallet private key for X-Stamp signing
-        root_org_id: Felix root organization ID
-
-    Returns:
-        Sub-organization ID string
-
-    Raises:
-        RuntimeError: if sub-org not found or API call fails
+    Uses authproxy.turnkey.com/v1/account with PUBLIC_KEY filter.
+    No authentication required — the auth proxy handles routing.
     """
-    body = json.dumps({
-        "organizationId": root_org_id,
-        "filterType": "FILTER_TYPE_WALLET_ADDRESS",
-        "filterValue": wallet_address.lower(),
-    }, separators=(",", ":")).encode("utf-8")
+    private_key = _load_secp256k1_private_key(wallet_private_key_hex)
+    compressed_pubkey = _get_secp256k1_public_key_hex_compressed(private_key)
 
-    log.info(
-        "Felix auth: Turnkey list_suborgs (root_org=%s, wallet=%s)",
-        root_org_id,
-        wallet_address,
-    )
-    response = _turnkey_post(
-        "/public/v1/query/list_suborgs",
-        body,
-        wallet_private_key_hex,
+    body = json.dumps(
+        {"filterType": "PUBLIC_KEY", "filterValue": compressed_pubkey},
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    url = "https://authproxy.turnkey.com/v1/account"
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "x-auth-proxy-config-id": FELIX_AUTH_PROXY_CONFIG,
+        },
+        method="POST",
     )
 
-    # Response: {"organizationIds": ["sub-org-id-1", ...]}
-    org_ids = response.get("organizationIds", [])
-    log.info(
-        "Felix auth: list_suborgs returned %d sub-org id(s)",
-        len(org_ids),
-    )
-    if not org_ids:
+    log.info("Felix auth: auth proxy account lookup (pubkey=%s...)", compressed_pubkey[:12])
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+            data = json.loads(raw)
+            org_id = data.get("organizationId")
+            if not org_id:
+                raise RuntimeError(
+                    f"No organizationId in auth proxy response: {raw[:400]}"
+                )
+            log.info("Felix auth: resolved sub_org_id=%s", org_id)
+            return org_id
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="replace")
+        log.error("Auth proxy lookup failed: HTTP %s. Body: %s", e.code, err_body[:800])
         raise RuntimeError(
-            f"No Turnkey sub-org found for wallet {wallet_address}. "
-            f"Ensure the wallet is registered with Felix (org: {root_org_id})."
-        )
-
-    return org_ids[0]
+            f"Auth proxy HTTP {e.code}: {err_body[:800]}"
+        ) from e
+    except urllib.error.URLError as e:
+        log.error("Auth proxy lookup failed: network error %s", e.reason)
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -364,27 +354,28 @@ def initial_login(
     """Perform initial Felix login using wallet private key.
 
     Flow:
-    1. Look up sub-org ID (if not provided)
-    2. Build stamp_login body (wallet's compressed pubkey as session identity)
-    3. Sign with wallet secp256k1 key -> X-Stamp header
-    4. POST to Turnkey -> receive JWT
+    1. Look up sub-org ID via Felix auth proxy (PUBLIC_KEY lookup, no auth)
+    2. Generate ephemeral secp256k1 session keypair
+    3. Build stamp_login body (ROOT org ID, session pubkey as identity)
+    4. Sign body with wallet key via EIP-191 → X-Stamp header
+    5. POST to Turnkey → receive JWT
     """
     # Step 1: Resolve sub-org
     if not sub_org_id:
-        if not wallet_address:
-            raise ValueError(
-                "wallet_address is required when sub_org_id is not provided"
-            )
-        sub_org_id = lookup_sub_org(wallet_address, wallet_private_key_hex)
+        sub_org_id = lookup_sub_org(wallet_private_key_hex)
 
-    # Step 2: Build stamp_login body
-    body_str = build_stamp_login_body(
-        organization_id=sub_org_id,
-        wallet_private_key_hex=wallet_private_key_hex,
-    )
+    # Step 2: Generate ephemeral secp256k1 session keypair
+    session_key = ec.generate_private_key(ec.SECP256K1())
+    session_pub_hex = session_key.public_key().public_bytes(
+        encoding=serialization.Encoding.X962,
+        format=serialization.PublicFormat.CompressedPoint,
+    ).hex()
+
+    # Step 3: Build stamp_login body (ROOT org, ephemeral session pubkey)
+    body_str = build_stamp_login_body(session_public_key_hex=session_pub_hex)
     body_bytes = body_str.encode("utf-8")
 
-    # Step 3: POST to Turnkey with X-Stamp
+    # Step 4: POST to Turnkey with wallet X-Stamp
     log.info("Felix auth: Turnkey stamp_login (sub_org_id=%s)", sub_org_id)
     response = _turnkey_post(
         "/public/v1/submit/stamp_login",
@@ -392,7 +383,7 @@ def initial_login(
         wallet_private_key_hex,
     )
 
-    # Step 4: Parse JWT
+    # Step 5: Parse JWT
     jwt_token = parse_stamp_login_response(response)
 
     return FelixSession(
@@ -406,10 +397,9 @@ def refresh_session(
     session: FelixSession,
     wallet_private_key_hex: str,
 ) -> FelixSession:
-    """Refresh Felix session by re-running stamp_login with the wallet key.
+    """Refresh Felix session by re-running stamp_login with a new ephemeral keypair.
 
-    After removing the P-256 session keypair, refresh is equivalent to
-    initial_login with the sub_org_id already known (skips the lookup step).
+    After P-256 removal, refresh = initial_login with cached sub_org_id (skips lookup).
     """
     log.info("Felix auth: Turnkey stamp_login refresh (sub_org_id=%s)", session.sub_org_id)
     # refresh_session re-runs stamp_login with cached sub_org_id (no lookup)

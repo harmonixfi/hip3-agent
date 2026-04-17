@@ -14,6 +14,8 @@ import pytest
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
+from cryptography.hazmat.primitives.asymmetric import ec
+
 from tracking.connectors.felix_auth import (
     sign_with_secp256k1,
     build_x_stamp_header,
@@ -60,21 +62,24 @@ def test_build_x_stamp_header():
 
 
 def test_build_stamp_login_body():
-    """stamp_login body uses wallet's compressed secp256k1 pubkey as session identity."""
-    test_key_hex = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-    org_id = "test-org-123"
+    """stamp_login body uses ROOT org ID and provided ephemeral session pubkey."""
+    from cryptography.hazmat.primitives import serialization
 
-    body = build_stamp_login_body(
-        organization_id=org_id,
-        wallet_private_key_hex=test_key_hex,
-    )
+    session_key = ec.generate_private_key(ec.SECP256K1())
+    session_pub_hex = session_key.public_key().public_bytes(
+        encoding=serialization.Encoding.X962,
+        format=serialization.PublicFormat.CompressedPoint,
+    ).hex()
+
+    body = build_stamp_login_body(session_public_key_hex=session_pub_hex)
 
     parsed = json.loads(body)
     assert parsed["type"] == "ACTIVITY_TYPE_STAMP_LOGIN"
-    assert parsed["organizationId"] == org_id
+    assert parsed["organizationId"] == "b052e625-0ea1-4e6a-b3a4-dd3d8e06f636"
     pub_key = parsed["parameters"]["publicKey"]
     assert len(pub_key) == 66, "publicKey must be compressed secp256k1 (33 bytes = 66 hex)"
     assert pub_key[:2] in ("02", "03"), "compressed pubkey has 02/03 prefix"
+    assert pub_key == session_pub_hex, "publicKey must match provided session pubkey"
     assert parsed["parameters"]["expirationSeconds"] == "1209600"
     assert "timestampMs" in parsed
     ts = int(parsed["timestampMs"])

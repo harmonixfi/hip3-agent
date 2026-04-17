@@ -1,28 +1,12 @@
 """Felix equities headless auth via Turnkey stamp_login.
 
-Implements the Turnkey authentication protocol:
-1. Generate P-256 session keypair (for session refresh)
-2. Sign each POST body with the EVM wallet using EIP-191 (same as @turnkey/wallet-stamper)
-3. Create X-Stamp header (SIGNATURE_SCHEME_TK_API_SECP256K1_EIP191 + DER signature)
-4. Exchange for JWT (ES256, 900s TTL)
-5. Refresh using P-256 session key before expiry
-
-The wallet private key (secp256k1) MUST come from the vault — never from env vars.
-
 Auth flow:
     wallet_key (secp256k1, from vault)
-      → sign stamp_login body
-      → X-Stamp header
+      → compressed pubkey used as session identity (parameters.publicKey)
+      → sign stamp_login body with EIP-191 (X-Stamp header)
       → POST /public/v1/submit/stamp_login
-      → JWT (900s TTL)
+      → JWT (14-day TTL)
       → Authorization: Bearer <jwt> to Felix proxy
-
-Usage:
-    from tracking.connectors.felix_auth import initial_login, refresh_session
-
-    session = initial_login(wallet_private_key_hex)
-    # ... later ...
-    new_session = refresh_session(session)
 """
 
 from __future__ import annotations
@@ -52,8 +36,8 @@ TURNKEY_API_BASE = "https://api.turnkey.com"
 FELIX_PROXY_BASE = "https://spot-equities-proxy.white-star-bc1e.workers.dev"
 FELIX_ORG_ID = "b052e625-0ea1-4e6a-b3a4-dd3d8e06f636"
 FELIX_AUTH_PROXY_CONFIG = "cc6ef853-e2e2-45db-a0f8-7c46be0ad04f"
-JWT_TTL_SECONDS = 900
-REFRESH_BUFFER_SECONDS = 120  # refresh when <2 min remaining
+JWT_TTL_SECONDS = 1209600      # 14 days — matches browser signin
+REFRESH_BUFFER_SECONDS = 86400  # refresh 1 day before expiry
 
 # EVM wallets use EIP-191 over the raw POST body (matches @turnkey/wallet-stamper).
 TURNKEY_STAMP_SCHEME_SECP256K1_EIP191 = "SIGNATURE_SCHEME_TK_API_SECP256K1_EIP191"
@@ -70,15 +54,12 @@ class FelixSession:
     """Holds Felix auth session state."""
     jwt: str
     expires_at: int  # epoch seconds
-    session_key_pem: str  # P-256 private key in PEM format
     sub_org_id: str
 
     def is_expired(self) -> bool:
-        """True if JWT has expired."""
         return time.time() >= self.expires_at
 
     def needs_refresh(self) -> bool:
-        """True if JWT will expire within REFRESH_BUFFER_SECONDS."""
         return time.time() >= (self.expires_at - REFRESH_BUFFER_SECONDS)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -89,50 +70,8 @@ class FelixSession:
         return cls(
             jwt=data["jwt"],
             expires_at=int(data["expires_at"]),
-            session_key_pem=data["session_key_pem"],
             sub_org_id=data["sub_org_id"],
         )
-
-
-# ---------------------------------------------------------------------------
-# P-256 Session Key Operations
-# ---------------------------------------------------------------------------
-
-
-def generate_p256_session_keypair() -> ec.EllipticCurvePrivateKey:
-    """Generate a new P-256 (secp256r1) private key for Turnkey session refresh."""
-    return ec.generate_private_key(ec.SECP256R1())
-
-
-def get_p256_public_key_hex(private_key: ec.EllipticCurvePrivateKey) -> str:
-    """Extract uncompressed public key as hex string (65 bytes = 130 hex chars).
-
-    Format: 04 || x (32 bytes) || y (32 bytes)
-    This is what Turnkey expects in the stamp_login parameters.publicKey field.
-    """
-    pub_bytes = private_key.public_key().public_bytes(
-        encoding=serialization.Encoding.X962,
-        format=serialization.PublicFormat.UncompressedPoint,
-    )
-    return pub_bytes.hex()
-
-
-def serialize_p256_private_key_pem(private_key: ec.EllipticCurvePrivateKey) -> str:
-    """Serialize P-256 private key to PEM string for vault storage."""
-    pem_bytes = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.TraditionalOpenSSL,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
-    return pem_bytes.decode("utf-8")
-
-
-def deserialize_p256_private_key_pem(pem: str) -> ec.EllipticCurvePrivateKey:
-    """Deserialize P-256 private key from PEM string."""
-    key = serialization.load_pem_private_key(pem.encode("utf-8"), password=None)
-    if not isinstance(key, ec.EllipticCurvePrivateKey):
-        raise ValueError("PEM does not contain an EC private key")
-    return key
 
 
 # ---------------------------------------------------------------------------
@@ -169,8 +108,8 @@ def _get_secp256k1_public_key_hex(private_key: ec.EllipticCurvePrivateKey) -> st
 def _get_secp256k1_public_key_hex_compressed(private_key: ec.EllipticCurvePrivateKey) -> str:
     """Get compressed secp256k1 public key as hex (33 bytes = 66 hex chars).
 
-    Turnkey X-Stamp verification expects SIGNATURE_SCHEME_TK_API_P256 stamps to
-    carry a compressed pubkey (see Turnkey API key signature format).
+    Used as both the X-Stamp publicKey and stamp_login parameters.publicKey,
+    matching @turnkey/wallet-stamper browser behavior.
     """
     pub_bytes = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.X962,
@@ -245,30 +184,27 @@ def build_x_stamp_header(wallet_private_key_hex: str, body: bytes) -> str:
 def build_stamp_login_body(
     *,
     organization_id: str,
-    session_public_key_hex: str,
+    wallet_private_key_hex: str,
     expiration_seconds: int = JWT_TTL_SECONDS,
     timestamp_ms: Optional[int] = None,
 ) -> str:
     """Build the JSON body for the Turnkey stamp_login request.
 
-    Args:
-        organization_id: the user's Turnkey sub-org ID
-        session_public_key_hex: P-256 session public key (uncompressed hex)
-        expiration_seconds: JWT TTL (default 900)
-        timestamp_ms: override timestamp (for testing)
-
-    Returns:
-        JSON string (compact, no extra whitespace)
+    Uses the wallet's compressed secp256k1 pubkey as the session identity,
+    matching @turnkey/wallet-stamper browser behavior.
     """
     if timestamp_ms is None:
         timestamp_ms = int(time.time() * 1000)
+
+    private_key = _load_secp256k1_private_key(wallet_private_key_hex)
+    wallet_pub_hex = _get_secp256k1_public_key_hex_compressed(private_key)
 
     body = {
         "type": "ACTIVITY_TYPE_STAMP_LOGIN",
         "timestampMs": str(timestamp_ms),
         "organizationId": organization_id,
         "parameters": {
-            "publicKey": session_public_key_hex,
+            "publicKey": wallet_pub_hex,
             "expirationSeconds": str(expiration_seconds),
         },
     }
@@ -421,45 +357,30 @@ def lookup_sub_org(
 
 def initial_login(
     wallet_private_key_hex: str,
-    wallet_address: str,
+    wallet_address: str = "",
     *,
     sub_org_id: Optional[str] = None,
 ) -> FelixSession:
     """Perform initial Felix login using wallet private key.
 
-    This is the full auth flow:
+    Flow:
     1. Look up sub-org ID (if not provided)
-    2. Generate P-256 session keypair
-    3. Build stamp_login body
-    4. Sign with wallet secp256k1 key -> X-Stamp header
-    5. POST to Turnkey -> receive JWT
-
-    Args:
-        wallet_private_key_hex: secp256k1 wallet private key (hex)
-        wallet_address: Ethereum wallet address (0x...)
-        sub_org_id: optional cached sub-org ID (skips lookup)
-
-    Returns:
-        FelixSession with JWT, P-256 session key, and expiry
-
-    Security note: wallet_private_key_hex should come from vault, never env var.
+    2. Build stamp_login body (wallet's compressed pubkey as session identity)
+    3. Sign with wallet secp256k1 key -> X-Stamp header
+    4. POST to Turnkey -> receive JWT
     """
     # Step 1: Resolve sub-org
     if not sub_org_id:
         sub_org_id = lookup_sub_org(wallet_address, wallet_private_key_hex)
 
-    # Step 2: Generate session keypair
-    session_key = generate_p256_session_keypair()
-    session_pub_hex = get_p256_public_key_hex(session_key)
-
-    # Step 3: Build stamp_login body
+    # Step 2: Build stamp_login body
     body_str = build_stamp_login_body(
         organization_id=sub_org_id,
-        session_public_key_hex=session_pub_hex,
+        wallet_private_key_hex=wallet_private_key_hex,
     )
     body_bytes = body_str.encode("utf-8")
 
-    # Step 4: POST to Turnkey with X-Stamp
+    # Step 3: POST to Turnkey with X-Stamp
     log.info("Felix auth: Turnkey stamp_login (sub_org_id=%s)", sub_org_id)
     response = _turnkey_post(
         "/public/v1/submit/stamp_login",
@@ -467,13 +388,12 @@ def initial_login(
         wallet_private_key_hex,
     )
 
-    # Step 5: Parse JWT
-    jwt = parse_stamp_login_response(response)
+    # Step 4: Parse JWT
+    jwt_token = parse_stamp_login_response(response)
 
     return FelixSession(
-        jwt=jwt,
+        jwt=jwt_token,
         expires_at=int(time.time()) + JWT_TTL_SECONDS,
-        session_key_pem=serialize_p256_private_key_pem(session_key),
         sub_org_id=sub_org_id,
     )
 
@@ -482,53 +402,9 @@ def refresh_session(
     session: FelixSession,
     wallet_private_key_hex: str,
 ) -> FelixSession:
-    """Refresh an existing Felix session using the P-256 session key.
-
-    If the session has a valid P-256 key and the sub-org is known, we sign
-    a new stamp_login using the wallet key but reuse the session keypair.
-
-    In the Turnkey model, refresh still requires wallet signature (the P-256
-    key is the *target* session key, not the *signing* key for stamp_login).
-
-    If the session is fully expired or corrupted, falls back to initial_login.
-
-    Args:
-        session: current FelixSession
-        wallet_private_key_hex: wallet key for signing
-
-    Returns:
-        New FelixSession with fresh JWT
-    """
-    try:
-        # Reuse existing P-256 session key
-        session_key = deserialize_p256_private_key_pem(session.session_key_pem)
-        session_pub_hex = get_p256_public_key_hex(session_key)
-
-        # Build new stamp_login body
-        body_str = build_stamp_login_body(
-            organization_id=session.sub_org_id,
-            session_public_key_hex=session_pub_hex,
-        )
-        body_bytes = body_str.encode("utf-8")
-
-        # Sign and POST
-        log.info("Felix auth: Turnkey stamp_login refresh (sub_org_id=%s)", session.sub_org_id)
-        response = _turnkey_post(
-            "/public/v1/submit/stamp_login",
-            body_bytes,
-            wallet_private_key_hex,
-        )
-
-        jwt = parse_stamp_login_response(response)
-
-        return FelixSession(
-            jwt=jwt,
-            expires_at=int(time.time()) + JWT_TTL_SECONDS,
-            session_key_pem=session.session_key_pem,  # reuse same P-256 key
-            sub_org_id=session.sub_org_id,
-        )
-
-    except Exception:
-        # Refresh failed — we cannot silently recover here.
-        # Caller (cron script) decides whether to do a full initial_login.
-        raise
+    """Refresh Felix session by re-running stamp_login with the wallet key."""
+    log.info("Felix auth: Turnkey stamp_login refresh (sub_org_id=%s)", session.sub_org_id)
+    return initial_login(
+        wallet_private_key_hex,
+        sub_org_id=session.sub_org_id,
+    )

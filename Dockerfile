@@ -16,7 +16,9 @@ COPY . .
 
 # Copy crontab
 COPY docker/crontab /etc/cron.d/harmonix-cron
-RUN chmod 0644 /etc/cron.d/harmonix-cron && crontab /etc/cron.d/harmonix-cron
+RUN sed -i 's/\r$//' /etc/cron.d/harmonix-cron \
+    && chmod 0644 /etc/cron.d/harmonix-cron \
+    && crontab /etc/cron.d/harmonix-cron
 
 # Create log directory
 RUN mkdir -p /app/logs

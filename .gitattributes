@@ -1,0 +1,4 @@
+# Force LF for shell/cron/entrypoint files so Docker builds work on WSL/Windows
+docker/crontab text eol=lf
+docker/entrypoint.sh text eol=lf
+*.sh text eol=lf

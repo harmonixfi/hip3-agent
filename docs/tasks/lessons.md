@@ -59,6 +59,13 @@
 - **Root cause:** Snapshot deltas conflate trading PnL, deposits, withdrawals, and price drift — inferring a specific transaction from them risks mis-attribution
 - **Last violated:** 2026-04-17
 
+### [database] DB-002: finalize_trade commits internally — skip it in dry-run paths
+- **Context:** Migration script called finalize_trade inside a dry-run branch, expecting final con.rollback() to clean up. But finalize_trade calls con.commit() internally, so position/leg inserts leaked into the DB even with commit=False.
+- **Wrong:** `finalize_trade(con, t["trade_id"])` then `con.rollback()` at end (commit already happened)
+- **Right:** Guard finalize_trade behind the commit flag: `if commit: finalize_trade(con, t["trade_id"])`. In dry-run only call create_draft_trade (which does NOT commit), then rollback at the end.
+- **Root cause:** finalize_trade calls con.commit() at the end to update leg sizes + position status — it was not designed to be called inside a larger un-committed transaction.
+- **Last violated:** 2026-04-17
+
 ### [template] XXX-000: Short title describing the lesson
 - **Context:** What you were doing when the issue occurred
 - **Wrong:** Bad code/command/approach (copy-pasteable)

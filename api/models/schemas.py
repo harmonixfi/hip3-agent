@@ -146,6 +146,11 @@ class PositionDetail(PositionSummary):
     cashflows: list[CashflowItem] = []
     daily_funding_series: list[DailyFundingItem] = []
 
+    # Derived from pm_trades (populated when Trade layer is active)
+    weighted_avg_entry_spread_bps: Optional[float] = None
+    open_trades_count: Optional[int] = None
+    close_trades_count: Optional[int] = None
+
 
 # ============================================================
 # Fills

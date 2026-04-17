@@ -15,7 +15,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from api.deps import get_db
+from api.deps import get_db, get_db_writable
 from api.models.schemas import (
     ClosedPositionAnalysis,
     CashflowItem,
@@ -29,6 +29,7 @@ from api.models.schemas import (
     SubPairSpread,
     WindowedMetrics,
 )
+from api.models.trade_schemas import PositionCreateRequest
 
 router = APIRouter(prefix="/api/positions", tags=["positions"])
 
@@ -491,11 +492,37 @@ def get_position(
         for r in daily_funding_rows
     ]
 
+    # Derived from pm_trades (Trade layer). Returns NULLs if table absent or no FINALIZED trades.
+    trades_agg = None
+    try:
+        trades_agg = db.execute(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN state='FINALIZED' AND trade_type='OPEN' THEN 1 ELSE 0 END), 0) AS open_count,
+              COALESCE(SUM(CASE WHEN state='FINALIZED' AND trade_type='CLOSE' THEN 1 ELSE 0 END), 0) AS close_count,
+              CASE
+                WHEN SUM(CASE WHEN state='FINALIZED' AND trade_type='OPEN' THEN long_size ELSE 0 END) > 0
+                THEN SUM(CASE WHEN state='FINALIZED' AND trade_type='OPEN' THEN spread_bps * long_size ELSE 0 END)
+                     / SUM(CASE WHEN state='FINALIZED' AND trade_type='OPEN' THEN long_size ELSE 0 END)
+                ELSE NULL
+              END AS weighted_avg_entry_spread_bps
+            FROM pm_trades
+            WHERE position_id = ?
+            """,
+            (position_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        # pm_trades table not yet created (Trade layer not initialized)
+        pass
+
     return PositionDetail(
         **summary.model_dump(),
         fills_summary=fills_summary,
         cashflows=cashflows,
         daily_funding_series=daily_funding,
+        weighted_avg_entry_spread_bps=trades_agg["weighted_avg_entry_spread_bps"] if trades_agg else None,
+        open_trades_count=trades_agg["open_count"] if trades_agg else None,
+        close_trades_count=trades_agg["close_count"] if trades_agg else None,
     )
 
 
@@ -562,3 +589,39 @@ def get_position_fills(
         limit=limit,
         offset=offset,
     )
+
+
+@router.post("", status_code=201)
+def create_position(
+    req: PositionCreateRequest,
+    db: sqlite3.Connection = Depends(get_db_writable),
+):
+    """Create a Position + its two legs. Trade-layer equivalent of positions.json entry."""
+    if req.long_leg.side != "LONG" or req.short_leg.side != "SHORT":
+        raise HTTPException(status_code=422, detail="long_leg.side must be LONG and short_leg.side must be SHORT")
+
+    now = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+
+    existing = db.execute(
+        "SELECT 1 FROM pm_positions WHERE position_id = ?", (req.position_id,)
+    ).fetchone()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"position already exists: {req.position_id}")
+
+    db.execute(
+        "INSERT INTO pm_positions (position_id, venue, status, created_at_ms, updated_at_ms, base, strategy_type) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (req.position_id, req.venue, "OPEN", now, now, req.base, req.strategy_type),
+    )
+    for leg in (req.long_leg, req.short_leg):
+        db.execute(
+            "INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size, status, opened_at_ms, account_id, meta_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                leg.leg_id, req.position_id, leg.venue, leg.inst_id, leg.side,
+                0.0, "OPEN", now, leg.account_id or "",
+                json.dumps({"wallet_label": leg.wallet_label}) if leg.wallet_label else None,
+            ),
+        )
+    db.commit()
+    return {"position_id": req.position_id, "status": "OPEN"}

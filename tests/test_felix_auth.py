@@ -9,7 +9,8 @@ import json
 import sys
 import time
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+
+import pytest
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -107,11 +108,8 @@ def test_parse_stamp_login_response_failure():
             "result": {}
         }
     }
-    try:
+    with pytest.raises(RuntimeError, match="FAILED|stamp_login"):
         parse_stamp_login_response(response)
-        assert False, "Should have raised RuntimeError"
-    except RuntimeError as e:
-        assert "FAILED" in str(e) or "stamp_login" in str(e).lower()
 
 
 def test_felix_session_is_expired():

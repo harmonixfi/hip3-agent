@@ -26,6 +26,23 @@ def _apply_sql_file(con: sqlite3.Connection, path: Path, tolerate_duplicate_colu
 
     When tolerate_duplicate_column=True, silently skip ALTER TABLE statements
     that fail with 'duplicate column name' (idempotent re-runs).
+
+    Inline-comment limitation:
+        The comment-stripping pass below filters whole-line ``--`` comments only
+        (lines whose first non-whitespace characters are ``--``).  Inline trailing
+        comments such as ``CREATE TABLE x(...);  -- note`` are NOT stripped.
+        SQLite treats the trailing ``-- note`` text as a no-op empty statement,
+        which is harmless in practice, but future developers who see unexpected
+        no-op executions in tracing should be aware of this.
+
+    split(";") fragility:
+        Splitting on ``";"`` is only safe for schema files that contain:
+          - No ``CREATE TRIGGER ... BEGIN ... END`` blocks (each ``END;``
+            introduces an embedded semicolon that would be split incorrectly).
+          - No string literals with embedded semicolons.
+        If either of those constructs is ever added to a schema file, replace
+        this helper with ``con.executescript()`` (which handles semicolons
+        inside trigger bodies correctly), or upgrade this parser.
     """
     raw = path.read_text(encoding="utf-8")
     # Strip single-line comments before splitting on ";" to avoid false splits
@@ -92,7 +109,7 @@ def fix_legacy_spot_inst_ids(con: sqlite3.Connection) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Apply monitoring v1 migration")
+    ap = argparse.ArgumentParser(description="Apply monitoring schema migrations (v1 + v2)")
     ap.add_argument("--db", type=Path, default=DEFAULT_DB)
     ap.add_argument("--dry-run", action="store_true", help="Show what would change without applying")
     args = ap.parse_args()

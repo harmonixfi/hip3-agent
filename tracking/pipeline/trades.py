@@ -12,7 +12,7 @@ VALID_TYPES = {"OPEN", "CLOSE"}
 VALID_SIDES = {"LONG", "SHORT"}
 
 
-@dataclass
+@dataclass(frozen=True)
 class FillRow:
     """Minimal fill projection used by aggregate_fills. Maps to pm_fills columns."""
     fill_id: int
@@ -21,13 +21,19 @@ class FillRow:
     fee: Optional[float] = None
 
 
-@dataclass
+@dataclass(frozen=True)
 class LegAggregate:
+    """Aggregate of a set of fills for one leg+side: size, notional, VWAP avg_px, total fees, count."""
     size: float
     notional: float
     avg_px: Optional[float]  # None when size == 0
     fees: float
     fill_count: int
+
+
+# ---------------------------------------------------------------------------
+# Pure math helpers (no I/O, no DB)
+# ---------------------------------------------------------------------------
 
 
 def aggregate_fills(fills: Iterable[FillRow]) -> LegAggregate:

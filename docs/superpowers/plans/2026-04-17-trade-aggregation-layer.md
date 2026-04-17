@@ -439,7 +439,7 @@ def side_for(trade_type: str, leg_side: str) -> str:
 source .arbit_env && .venv/bin/python -m pytest tests/test_trades_aggregate.py -v
 ```
 
-Expected: 13 passed.
+Expected: 16 passed.
 
 - [ ] **Step 5: Commit**
 

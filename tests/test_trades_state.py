@@ -11,6 +11,10 @@ import pytest
 from tracking.pipeline.trades import (
     create_draft_trade,
     TradeCreateError,
+    recompute_trade,
+    finalize_trade,
+    reopen_trade,
+    delete_trade,
 )
 
 
@@ -184,3 +188,102 @@ def test_create_draft_rejects_one_sided_fills(con):
     con.commit()
     with pytest.raises(TradeCreateError, match="no fills"):
         create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+
+
+# ---------------------------------------------------------------------------
+# A5: recompute, finalize, reopen, delete
+# ---------------------------------------------------------------------------
+
+
+def test_recompute_draft_picks_up_new_fill(con):
+    t = create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+    tid = t["trade_id"]
+
+    # Insert a late fill at t=1800 (within window)
+    con.execute(
+        "INSERT INTO pm_fills (venue, account_id, inst_id, side, px, sz, fee, ts, leg_id, position_id) "
+        "VALUES ('hyperliquid','0xMAIN','GOOGL','BUY',105.0,1.0,0.02,1800,'pos_X_SPOT','pos_X')"
+    )
+    con.commit()
+
+    result = recompute_trade(con, tid)
+    # new long size = 5 + 1 = 6
+    assert result["long_size"] == pytest.approx(6.0)
+
+
+def test_finalize_sets_state_and_timestamp(con):
+    t = create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+    finalized = finalize_trade(con, t["trade_id"])
+    assert finalized["state"] == "FINALIZED"
+    assert finalized["finalized_at_ms"] is not None
+
+
+def test_finalize_updates_leg_qty_and_position_status(con):
+    t = create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+    finalize_trade(con, t["trade_id"])
+    long_size = con.execute("SELECT size FROM pm_legs WHERE leg_id = 'pos_X_SPOT'").fetchone()[0]
+    short_size = con.execute("SELECT size FROM pm_legs WHERE leg_id = 'pos_X_PERP'").fetchone()[0]
+    assert long_size == pytest.approx(5.0)
+    assert short_size == pytest.approx(5.0)
+    status = con.execute("SELECT status FROM pm_positions WHERE position_id = 'pos_X'").fetchone()[0]
+    assert status == "OPEN"
+
+
+def test_finalize_rejects_overlap_with_existing_finalized(con):
+    t1 = create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+    finalize_trade(con, t1["trade_id"])
+
+    # Need more fills for t2 (fills in 1000-2000 are consumed)
+    con.executemany(
+        "INSERT INTO pm_fills (venue, account_id, inst_id, side, px, sz, fee, ts, leg_id, position_id) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [
+            ("hyperliquid", "0xMAIN", "GOOGL",     "BUY",  100.0, 1.0, 0.01, 1500, "pos_X_SPOT", "pos_X"),
+            ("hyperliquid", "0xMAIN", "xyz:GOOGL", "SELL", 101.0, 1.0, 0.01, 1500, "pos_X_PERP", "pos_X"),
+        ],
+    )
+    con.commit()
+    t2 = create_draft_trade(con, "pos_X", "OPEN", 1000, 1800)  # overlaps with 1000-2000
+    with pytest.raises(TradeCreateError, match="overlap"):
+        finalize_trade(con, t2["trade_id"])
+
+
+def test_reopen_finalized_goes_back_to_draft(con):
+    t = create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+    finalize_trade(con, t["trade_id"])
+    reopened = reopen_trade(con, t["trade_id"])
+    assert reopened["state"] == "DRAFT"
+    assert reopened["finalized_at_ms"] is None
+
+
+def test_delete_draft_releases_fills(con):
+    t = create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+    tid = t["trade_id"]
+
+    delete_trade(con, tid)
+
+    assert con.execute("SELECT COUNT(*) FROM pm_trades WHERE trade_id = ?", (tid,)).fetchone()[0] == 0
+    assert con.execute("SELECT COUNT(*) FROM pm_trade_fills WHERE trade_id = ?", (tid,)).fetchone()[0] == 0
+    # And fills remain in pm_fills
+    assert con.execute("SELECT COUNT(*) FROM pm_fills WHERE leg_id = 'pos_X_SPOT'").fetchone()[0] >= 2
+
+
+def test_close_realized_pnl_after_open_finalized(con):
+    t_open = create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+    finalize_trade(con, t_open["trade_id"])
+
+    # Seed CLOSE fills (spot SELL + perp BUY) at 3000..4000
+    con.executemany(
+        "INSERT INTO pm_fills (venue, account_id, inst_id, side, px, sz, fee, ts, leg_id, position_id) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [
+            ("hyperliquid", "0xMAIN", "GOOGL",     "SELL", 110.0, 5.0, 0.10, 3500, "pos_X_SPOT", "pos_X"),
+            ("hyperliquid", "0xMAIN", "xyz:GOOGL", "BUY",  108.0, 5.0, 0.10, 3500, "pos_X_PERP", "pos_X"),
+        ],
+    )
+    con.commit()
+
+    t_close = create_draft_trade(con, "pos_X", "CLOSE", 3000, 4000)
+    # open spread ≈ -97.85 bps; close spread = (110/108 - 1) * 10000 ≈ 185.19 bps
+    # realized = open - close = -97.85 - 185.19 ≈ -283.04 bps
+    assert t_close["realized_pnl_bps"] == pytest.approx(-283.0, abs=0.5)

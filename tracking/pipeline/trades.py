@@ -360,3 +360,260 @@ def create_draft_trade(
         "created_at_ms": now,
         "computed_at_ms": now,
     }
+
+
+# ---------------------------------------------------------------------------
+# A5: State transitions — recompute, finalize, reopen, delete
+# ---------------------------------------------------------------------------
+
+
+def _update_leg_sizes_and_position_status(con: sqlite3.Connection, position_id: str) -> None:
+    """Recompute pm_legs.size and pm_positions.status from FINALIZED trades.
+
+    Net size per leg = SUM(FINALIZED OPEN.{long|short}_size) - SUM(FINALIZED CLOSE.{long|short}_size).
+    Status transitions (manual PAUSED/EXITING overrides preserved):
+      - any FINALIZED OPEN exists AND net size > 0 on any leg → OPEN
+      - all leg sizes == 0 AND ≥1 FINALIZED CLOSE → CLOSED
+    """
+    legs = _fetch_position_legs(con, position_id)
+
+    for side, leg in legs.items():
+        row = con.execute(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN trade_type='OPEN' THEN
+                  CASE WHEN ?='LONG' THEN long_size ELSE short_size END
+                ELSE 0 END), 0)
+              - COALESCE(SUM(CASE WHEN trade_type='CLOSE' THEN
+                  CASE WHEN ?='LONG' THEN long_size ELSE short_size END
+                ELSE 0 END), 0) AS net_size
+            FROM pm_trades
+            WHERE position_id = ? AND state = 'FINALIZED'
+            """,
+            (side, side, position_id),
+        ).fetchone()
+        net = row[0] or 0.0
+        con.execute(
+            "UPDATE pm_legs SET size = ? WHERE leg_id = ?",
+            (net, leg["leg_id"]),
+        )
+
+    current_status = con.execute(
+        "SELECT status FROM pm_positions WHERE position_id = ?",
+        (position_id,),
+    ).fetchone()[0]
+    if current_status in ("PAUSED", "EXITING"):
+        return
+
+    agg = con.execute(
+        """
+        SELECT
+          SUM(CASE WHEN trade_type='OPEN' AND state='FINALIZED' THEN 1 ELSE 0 END),
+          SUM(CASE WHEN trade_type='CLOSE' AND state='FINALIZED' THEN 1 ELSE 0 END)
+        FROM pm_trades WHERE position_id = ?
+        """,
+        (position_id,),
+    ).fetchone()
+    n_open, n_close = (agg[0] or 0), (agg[1] or 0)
+
+    leg_sizes = con.execute(
+        "SELECT size FROM pm_legs WHERE position_id = ?",
+        (position_id,),
+    ).fetchall()
+    all_zero = all((s[0] or 0) == 0 for s in leg_sizes)
+
+    now = _now_ms()
+    if n_open > 0 and not all_zero:
+        con.execute(
+            "UPDATE pm_positions SET status='OPEN', updated_at_ms=? WHERE position_id=?",
+            (now, position_id),
+        )
+    elif all_zero and n_close > 0:
+        con.execute(
+            "UPDATE pm_positions SET status='CLOSED', updated_at_ms=?, closed_at_ms=? WHERE position_id=?",
+            (now, now, position_id),
+        )
+
+
+def _serialize_trade_row(row: sqlite3.Row) -> Dict[str, Any]:
+    """Convert sqlite3.Row to plain dict."""
+    return {k: row[k] for k in row.keys()}
+
+
+def recompute_trade(con: sqlite3.Connection, trade_id: str) -> Dict[str, Any]:
+    """Recompute aggregates for a DRAFT trade by re-scanning fills in its window.
+
+    Idempotent: appends newly-available fills via INSERT OR IGNORE.
+    Raises TradeCreateError if trade not found or not DRAFT.
+    """
+    con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM pm_trades WHERE trade_id = ?", (trade_id,)).fetchone()
+    if not row:
+        raise TradeCreateError(f"trade not found: {trade_id}")
+    if row["state"] != "DRAFT":
+        raise TradeCreateError(f"trade {trade_id} not DRAFT (state={row['state']})")
+
+    trade_type = row["trade_type"]
+    position_id = row["position_id"]
+    start_ts = row["start_ts"]
+    end_ts = row["end_ts"]
+    long_leg_id = row["long_leg_id"]
+    short_leg_id = row["short_leg_id"]
+
+    long_side = side_for(trade_type, "LONG")
+    short_side = side_for(trade_type, "SHORT")
+
+    # Pick up newly-available fills (those in window, not linked anywhere yet).
+    long_fills = _fetch_window_fills(con, long_leg_id, long_side, start_ts, end_ts)
+    short_fills = _fetch_window_fills(con, short_leg_id, short_side, start_ts, end_ts)
+
+    for f in long_fills:
+        con.execute(
+            "INSERT OR IGNORE INTO pm_trade_fills (trade_id, fill_id, leg_side) VALUES (?,?, 'LONG')",
+            (trade_id, f.fill_id),
+        )
+    for f in short_fills:
+        con.execute(
+            "INSERT OR IGNORE INTO pm_trade_fills (trade_id, fill_id, leg_side) VALUES (?,?, 'SHORT')",
+            (trade_id, f.fill_id),
+        )
+
+    # Re-aggregate from the link table (authoritative).
+    def _agg_from_link(side_label: str) -> LegAggregate:
+        rows = con.execute(
+            """
+            SELECT f.fill_id, f.px, f.sz, f.fee
+            FROM pm_trade_fills tf
+            JOIN pm_fills f ON f.fill_id = tf.fill_id
+            WHERE tf.trade_id = ? AND tf.leg_side = ?
+            """,
+            (trade_id, side_label),
+        ).fetchall()
+        return aggregate_fills(
+            [FillRow(fill_id=r[0], px=r[1], sz=r[2], fee=r[3]) for r in rows]
+        )
+
+    long_agg = _agg_from_link("LONG")
+    short_agg = _agg_from_link("SHORT")
+    spread_bps = compute_spread_bps(long_agg.avg_px, short_agg.avg_px)
+
+    realized_pnl_bps: Optional[float] = None
+    if trade_type == "CLOSE" and spread_bps is not None:
+        opens = _fetch_finalized_open_spreads(con, position_id)
+        if opens:
+            realized_pnl_bps = compute_realized_pnl_bps(opens, spread_bps)
+
+    now = _now_ms()
+    con.execute(
+        """
+        UPDATE pm_trades SET
+          long_size=?, long_notional=?, long_avg_px=?, long_fees=?, long_fill_count=?,
+          short_size=?, short_notional=?, short_avg_px=?, short_fees=?, short_fill_count=?,
+          spread_bps=?, realized_pnl_bps=?, computed_at_ms=?
+        WHERE trade_id=?
+        """,
+        (
+            long_agg.size, long_agg.notional, long_agg.avg_px, long_agg.fees, long_agg.fill_count,
+            short_agg.size, short_agg.notional, short_agg.avg_px, short_agg.fees, short_agg.fill_count,
+            spread_bps, realized_pnl_bps, now, trade_id,
+        ),
+    )
+    con.commit()
+
+    return _serialize_trade_row(
+        con.execute("SELECT * FROM pm_trades WHERE trade_id=?", (trade_id,)).fetchone()
+    )
+
+
+def finalize_trade(con: sqlite3.Connection, trade_id: str) -> Dict[str, Any]:
+    """DRAFT → FINALIZED. Rejects overlap with existing FINALIZED same trade_type on same legs.
+
+    CLOSE trades: rejects if no FINALIZED OPEN trades on the position.
+    Updates pm_legs.size and pm_positions.status from all FINALIZED trades.
+    """
+    con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM pm_trades WHERE trade_id = ?", (trade_id,)).fetchone()
+    if not row:
+        raise TradeCreateError(f"trade not found: {trade_id}")
+    if row["state"] != "DRAFT":
+        raise TradeCreateError(f"trade {trade_id} not DRAFT")
+
+    position_id = row["position_id"]
+    trade_type = row["trade_type"]
+    this_window = TradeWindow(start_ts=row["start_ts"], end_ts=row["end_ts"])
+
+    other_finalized = con.execute(
+        """
+        SELECT trade_id, start_ts, end_ts, trade_type FROM pm_trades
+        WHERE position_id = ? AND state = 'FINALIZED' AND trade_id != ?
+          AND trade_type = ?
+          AND (long_leg_id = ? OR short_leg_id = ?)
+        """,
+        (position_id, trade_id, trade_type, row["long_leg_id"], row["short_leg_id"]),
+    ).fetchall()
+    for o in other_finalized:
+        other_win = TradeWindow(start_ts=o["start_ts"], end_ts=o["end_ts"])
+        if overlaps(this_window, other_win):
+            raise TradeCreateError(
+                f"overlap with FINALIZED trade {o['trade_id']} "
+                f"({o['start_ts']}..{o['end_ts']})"
+            )
+
+    if trade_type == "CLOSE":
+        if not _fetch_finalized_open_spreads(con, position_id):
+            raise TradeCreateError(
+                "cannot finalize CLOSE: no FINALIZED OPEN trades on position"
+            )
+
+    now = _now_ms()
+    con.execute(
+        "UPDATE pm_trades SET state='FINALIZED', finalized_at_ms=?, computed_at_ms=? WHERE trade_id=?",
+        (now, now, trade_id),
+    )
+    _update_leg_sizes_and_position_status(con, position_id)
+    con.commit()
+
+    return _serialize_trade_row(
+        con.execute("SELECT * FROM pm_trades WHERE trade_id=?", (trade_id,)).fetchone()
+    )
+
+
+def reopen_trade(con: sqlite3.Connection, trade_id: str) -> Dict[str, Any]:
+    """FINALIZED → DRAFT. Clears finalized_at_ms; re-derives leg/position state; clears reconcile warning."""
+    con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM pm_trades WHERE trade_id=?", (trade_id,)).fetchone()
+    if not row:
+        raise TradeCreateError(f"trade not found: {trade_id}")
+    if row["state"] != "FINALIZED":
+        raise TradeCreateError(f"trade {trade_id} not FINALIZED")
+    position_id = row["position_id"]
+
+    con.execute(
+        "UPDATE pm_trades SET state='DRAFT', finalized_at_ms=NULL, computed_at_ms=? WHERE trade_id=?",
+        (_now_ms(), trade_id),
+    )
+    _update_leg_sizes_and_position_status(con, position_id)
+    con.execute("DELETE FROM pm_trade_reconcile_warnings WHERE trade_id=?", (trade_id,))
+    con.commit()
+
+    return _serialize_trade_row(
+        con.execute("SELECT * FROM pm_trades WHERE trade_id=?", (trade_id,)).fetchone()
+    )
+
+
+def delete_trade(con: sqlite3.Connection, trade_id: str) -> None:
+    """Hard delete. pm_trade_fills cascade via FK; pm_fills untouched.
+
+    Re-derives leg/position state from remaining FINALIZED trades.
+    """
+    con.row_factory = sqlite3.Row
+    row = con.execute("SELECT position_id FROM pm_trades WHERE trade_id=?", (trade_id,)).fetchone()
+    if not row:
+        raise TradeCreateError(f"trade not found: {trade_id}")
+    position_id = row["position_id"]
+
+    con.execute("DELETE FROM pm_trade_fills WHERE trade_id=?", (trade_id,))
+    con.execute("DELETE FROM pm_trade_reconcile_warnings WHERE trade_id=?", (trade_id,))
+    con.execute("DELETE FROM pm_trades WHERE trade_id=?", (trade_id,))
+    _update_leg_sizes_and_position_status(con, position_id)
+    con.commit()

@@ -1,6 +1,6 @@
 # WORKFLOW.md - Harmonix Daily Delta-Neutral Workflow
 
-Last updated: 2026-03-30
+Last updated: 2026-04-17
 Owner: Harmonix
 
 ---
@@ -64,6 +64,29 @@ Bootstrap note:
 - Register Harmonix positions explicitly before treating any report as portfolio-aware.
 - Generated alert/cashflow/equity/report state was also reset after cloning so the first run starts clean.
 
+### Step A+ - Account equity mechanics (read this before touching equity)
+
+`pull_positions_v3.py` writes one row per tracked wallet into `pm_account_snapshots`. How `total_balance` is computed depends on the Hyperliquid **account abstraction mode**, auto-detected per pull via `POST /info {"type":"userAbstraction","user":<addr>}` and stored in `raw_json.account_mode`:
+
+| Mode | Equity formula |
+|---|---|
+| `unifiedAccount` / `portfolioMargin` | `spot_equity + Σ(unrealizedPnl across dexes)` — collateral is a single shared pool, so summing `accountValue` across builder dexes **double-counts** |
+| `disabled` / `default` / `dexAbstraction` | `perp_native + Σ(accountValue per builder dex) + spot_equity` — each dex is a separate isolated pool |
+
+Current wallet modes (DN strategy):
+- `0xd4737…` (commodity) → `unifiedAccount`
+- `0x3c2c…` (alt), `0x4Fde…` (main), `0x0BdF…` (depeg) → `disabled`
+
+**Excluded spot tokens** — `config/equity_config.json::exclude_spot_tokens` lists tokens per-account to skip from `spot_equity`. They stay in `raw_json.spot_tokens` for audit but don't count toward `total_balance`. **Do NOT** add tokens that can be spot legs of a DN position (e.g., `HYPE`, `LINK0`, `UFART`) — tokens only belong here if they are unrelated noise (e.g., airdrops, protocol rewards).
+
+**Felix equity** — pulled separately (different auth flow, see `docs/felix-auth.md`). When Felix is drained and the Felix puller is not running, insert a manual zero snapshot:
+```sql
+INSERT INTO pm_account_snapshots (venue, account_id, ts, total_balance, available_balance, margin_balance, unrealized_pnl, position_value)
+VALUES ('felix', '0xB89E…', strftime('%s','now')*1000, 0, 0, 0, 0, 0);
+```
+
+Reference: `tracking/connectors/hyperliquid_private.py::fetch_account_snapshot`.
+
 ### Step B - Freshness and integrity gate
 
 Before any recommendation:
@@ -77,6 +100,28 @@ If any of these fail:
 - report status becomes `DEGRADED`
 - recommendations may downgrade to `MONITOR` or `INVESTIGATE`
 - the warning must appear near the top of the report
+
+### Step B+ - Cashflow reconciliation (APR correctness)
+
+External capital movements (user deposits/withdrawals, transfers of non-strategy assets out) MUST be recorded in two tables so APR formulas don't misclassify them as trading PnL:
+
+| Table | Level | Consumed by | APR field affected |
+|---|---|---|---|
+| `pm_cashflows` | Per-wallet (`account_id`) | `tracking/pipeline/portfolio.py::compute_portfolio_snapshot` | `pm_portfolio_snapshots.apr_daily` (via `cashflow_adjusted_change = daily_change - net_deposits_24h`) |
+| `vault_cashflows` | Per-strategy (`strategy_id`) | `tracking/vault/recalc.py` | `vault_strategy_snapshots.apr_7d` / `apr_30d` |
+
+`cf_type` semantics:
+- `DEPOSIT` (+amount), `WITHDRAW` (−amount) — affect equity, subtracted from APR numerator
+- `OTHER` — audit-only; does NOT affect APR (use for transferring out `exclude_spot_tokens` assets)
+- `FUNDING`, `FEE`, `REALIZED_PNL` — ingested automatically by `pm_cashflows.py`; don't insert manually
+
+When inserting DEPOSIT/WITHDRAW for a DN wallet, mirror the event into `vault_cashflows` with `strategy_id='delta_neutral'` (or matching strategy) so strategy-level APR also adjusts.
+
+After backfilling cashflows, recompute historical APR fields in-place:
+```bash
+.venv/bin/python scripts/recompute_portfolio_apr.py --since 2026-04-02
+```
+This iterates `pm_portfolio_snapshots` and rewrites `daily_change_usd`, `cashflow_adjusted_change`, `apr_daily` using current `pm_cashflows`. Equity values stay untouched.
 
 ### Step C - Compute candidate ranking
 
@@ -322,6 +367,43 @@ Send behavior after run:
 - if `config/positions.json` is still empty, keep `Portfolio Summary` explicit that no open positions are tracked
 - if one section hard-fails, still send the remaining sections and name the failed section in the header
 - if Bean asks about a specific rotation, rerun with `--rotate-from ... --rotate-to ...` and include the populated `Rotation Cost Analysis`
+
+### Equity reconciliation helpers
+
+When reported equity doesn't match exchange UI ground truth:
+
+1. **Verify account mode** (unified vs standard):
+   ```bash
+   source .arbit_env && .venv/bin/python -c "
+   from tracking.connectors.hyperliquid_private import post_info
+   for a in ['0x3c2c…','0xd4737…']:
+       print(a, post_info({'type':'userAbstraction','user':a}))"
+   ```
+
+2. **Inspect snapshot breakdown**:
+   ```sql
+   SELECT datetime(ts/1000,'unixepoch'), round(total_balance,2),
+          json_extract(raw_json,'$.account_mode') AS mode,
+          json_extract(raw_json,'$.spot_equity') AS spot,
+          json_extract(raw_json,'$.perp_native') AS native,
+          json_extract(raw_json,'$.unified_upnl_sum') AS unified_upnl
+   FROM pm_account_snapshots WHERE account_id='0x…' ORDER BY ts DESC LIMIT 1;
+   ```
+
+3. **Reset derived snapshots + re-pull** (after fixing connector / backfilling cashflows):
+   ```sql
+   DELETE FROM pm_account_snapshots WHERE ts >= strftime('%s','YYYY-MM-DD')*1000
+     AND account_id IN ('0x…', '0x…');
+   DELETE FROM pm_portfolio_snapshots WHERE ts >= strftime('%s','YYYY-MM-DD')*1000;
+   ```
+   Then re-run `pull_positions_v3.py` + `pipeline_hourly.py`. APR will be NULL on the first post-reset snapshot (no prior 24h to compare) — normal.
+
+### Common gotchas
+
+- **CRLF in `.arbit_env`** (Windows/WSL clone): Python scripts may fail with `ValueError: unconverted data remains` on env-sourced dates. Fix: `sed -i 's/\r$//' .arbit_env`. `tracking/pipeline/portfolio.py::DEFAULT_TRACKING_START` already strips defensively.
+- **Delta Neutral provider**: `tracking/vault/providers/delta_neutral.py::get_equity` initializes `counted_lower: set` before the wallet loop. If vault_snapshot fails with `NameError: name 'counted_lower' is not defined`, confirm this line exists (refactor residue bug).
+- **Builder dex fallback duplicate**: In `disabled` mode, HL's API may return master `accountValue` when querying a builder dex the wallet isn't using — `perp_native == perp_xyz` exactly is a tell. Current logic trusts the API; if HL changes this behavior, filter by `bool(bst.get("assetPositions"))` before summing.
+- **Cashflow Apr 7 TRANSFER**: an older `TRANSFER` event on 2026-04-07 (`allocate fund to open stocks`) was an internal strategy reallocation. User-provided Apr 2-10 deposit/withdraw backfill supersedes it — don't re-add.
 
 ### Local backend + frontend (dashboard)
 

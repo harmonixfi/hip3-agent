@@ -21,7 +21,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 
-DEFAULT_TRACKING_START = os.environ.get("TRACKING_START_DATE", "2026-03-27")
+DEFAULT_TRACKING_START = (os.environ.get("TRACKING_START_DATE", "2026-03-27") or "").strip()
 
 
 def _now_ms() -> int:

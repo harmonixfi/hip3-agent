@@ -122,6 +122,17 @@ class HyperliquidPrivateConnector(PrivateConnectorBase):
     ) -> Dict:
         use_dex = self.dex if dex is None else str(dex or "").strip()
 
+        # --- 0. Detect account abstraction mode ---
+        # Unified/portfolio-margin accounts share a single collateral pool across all
+        # builder dexes, so summing accountValue across dex queries double-counts.
+        # See https://hyperliquid.gitbook.io/hyperliquid-docs/trading/account-abstraction-modes
+        try:
+            mode_resp = post_info({"type": "userAbstraction", "user": self.address})
+            account_mode = mode_resp if isinstance(mode_resp, str) else "unknown"
+        except Exception:
+            account_mode = "unknown"
+        is_unified = account_mode in ("unifiedAccount", "portfolioMargin")
+
         # --- 1. Native perp margin ---
         st = post_info({"type": "clearinghouseState", "user": self.address}, dex=use_dex)
         if not isinstance(st, dict):
@@ -130,6 +141,12 @@ class HyperliquidPrivateConnector(PrivateConnectorBase):
         ms = st.get("marginSummary") or {}
         perp_native = _to_float(ms.get("accountValue")) or 0.0
         total_margin_used = _to_float(ms.get("totalMarginUsed"))
+        native_positions = st.get("assetPositions") or []
+        native_upnl = sum(
+            (_to_float((it.get("position") or {}).get("unrealizedPnl")) or 0.0)
+            for it in native_positions
+            if isinstance(it, dict)
+        )
 
         free = None
         if perp_native and total_margin_used is not None:
@@ -149,8 +166,16 @@ class HyperliquidPrivateConnector(PrivateConnectorBase):
             }
 
         # --- 2. Builder dex perp margins ---
-        breakdown: Dict[str, Any] = {"perp_native": round(perp_native, 2)}
-        total_perp = perp_native
+        breakdown: Dict[str, Any] = {
+            "account_mode": account_mode,
+            "perp_native": round(perp_native, 2),
+        }
+        per_dex_upnl: Dict[str, float] = {"": native_upnl}
+        # Standard (non-unified) mode: sum accountValue across all builder dexes
+        # (each is a separate isolated pool per HL account abstraction design).
+        # Unified mode: don't sum accountValue at all — total is derived from
+        # spot_equity + sum(uPnL across dexes) since collateral is shared.
+        total_perp_standard = perp_native
 
         for bdex in builder_dexes:
             time.sleep(0.3)
@@ -160,10 +185,20 @@ class HyperliquidPrivateConnector(PrivateConnectorBase):
                 )
                 bms = (bst or {}).get("marginSummary") or {}
                 bval = _to_float(bms.get("accountValue")) or 0.0
+                bpositions = (bst or {}).get("assetPositions") or []
+                bupnl = sum(
+                    (_to_float((it.get("position") or {}).get("unrealizedPnl")) or 0.0)
+                    for it in bpositions
+                    if isinstance(it, dict)
+                )
             except Exception:
                 bval = 0.0
+                bpositions = []
+                bupnl = 0.0
             breakdown[f"perp_{bdex}"] = round(bval, 2)
-            total_perp += bval
+            per_dex_upnl[bdex] = bupnl
+            if not is_unified:
+                total_perp_standard += bval
 
         # --- 3. Spot balances ---
         time.sleep(0.3)
@@ -241,14 +276,23 @@ class HyperliquidPrivateConnector(PrivateConnectorBase):
         breakdown["spot_tokens"] = spot_tokens
         breakdown["spot_quantities"] = spot_quantities  # raw qty by coin name
 
-        total_balance = total_perp + spot_equity
+        if is_unified:
+            # Unified collateral: spot_equity IS the collateral pool (USDC/USDH sit
+            # there). Add unrealized PnL from each dex's open positions.
+            total_upnl_all_dexes = sum(per_dex_upnl.values())
+            total_balance = spot_equity + total_upnl_all_dexes
+            margin_balance_report = total_upnl_all_dexes  # signed sum of uPnL
+            breakdown["unified_upnl_sum"] = round(total_upnl_all_dexes, 2)
+        else:
+            total_balance = total_perp_standard + spot_equity
+            margin_balance_report = total_perp_standard
 
         return {
             "account_id": self.address,
             "dex": use_dex,
             "total_balance": round(total_balance, 2),
             "available_balance": free,
-            "margin_balance": round(total_perp, 2),
+            "margin_balance": round(margin_balance_report, 2),
             "unrealized_pnl": None,
             "position_value": _to_float(ms.get("totalNtlPos")),
             "raw_json": breakdown,

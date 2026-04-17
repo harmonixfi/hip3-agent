@@ -12,14 +12,12 @@ Auth flow:
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import logging
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, asdict
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from cryptography.hazmat.primitives import hashes, serialization
@@ -57,9 +55,11 @@ class FelixSession:
     sub_org_id: str
 
     def is_expired(self) -> bool:
+        """True if JWT has expired."""
         return time.time() >= self.expires_at
 
     def needs_refresh(self) -> bool:
+        """True if JWT will expire within REFRESH_BUFFER_SECONDS."""
         return time.time() >= (self.expires_at - REFRESH_BUFFER_SECONDS)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -94,15 +94,6 @@ def _load_secp256k1_private_key(hex_key: str) -> ec.EllipticCurvePrivateKey:
 
     private_int = int.from_bytes(key_bytes, "big")
     return ec.derive_private_key(private_int, ec.SECP256K1())
-
-
-def _get_secp256k1_public_key_hex(private_key: ec.EllipticCurvePrivateKey) -> str:
-    """Get uncompressed secp256k1 public key as hex (65 bytes = 130 hex chars)."""
-    pub_bytes = private_key.public_key().public_bytes(
-        encoding=serialization.Encoding.X962,
-        format=serialization.PublicFormat.UncompressedPoint,
-    )
-    return pub_bytes.hex()
 
 
 def _get_secp256k1_public_key_hex_compressed(private_key: ec.EllipticCurvePrivateKey) -> str:
@@ -192,6 +183,15 @@ def build_stamp_login_body(
 
     Uses the wallet's compressed secp256k1 pubkey as the session identity,
     matching @turnkey/wallet-stamper browser behavior.
+
+    Args:
+        organization_id: Turnkey sub-org ID
+        wallet_private_key_hex: secp256k1 wallet private key (hex, 64 chars); pubkey used as session identity
+        expiration_seconds: JWT TTL in seconds (default 1209600 = 14 days)
+        timestamp_ms: override for testing
+
+    Returns:
+        compact JSON string for the request body
     """
     if timestamp_ms is None:
         timestamp_ms = int(time.time() * 1000)
@@ -371,6 +371,10 @@ def initial_login(
     """
     # Step 1: Resolve sub-org
     if not sub_org_id:
+        if not wallet_address:
+            raise ValueError(
+                "wallet_address is required when sub_org_id is not provided"
+            )
         sub_org_id = lookup_sub_org(wallet_address, wallet_private_key_hex)
 
     # Step 2: Build stamp_login body

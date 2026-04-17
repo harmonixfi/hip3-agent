@@ -144,3 +144,43 @@ def test_create_draft_rejects_invalid_window(con):
 def test_create_draft_rejects_invalid_trade_type(con):
     with pytest.raises(TradeCreateError, match="trade_type"):
         create_draft_trade(con, "pos_X", "ADD", 1000, 2000)
+
+
+def test_create_draft_rejects_closed_position(con):
+    con.execute("UPDATE pm_positions SET status='CLOSED' WHERE position_id='pos_X'")
+    con.commit()
+    with pytest.raises(TradeCreateError, match="CLOSED"):
+        create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+
+
+def test_create_draft_rejects_missing_base(con):
+    con.execute("UPDATE pm_positions SET base=NULL WHERE position_id='pos_X'")
+    con.commit()
+    with pytest.raises(TradeCreateError, match="base"):
+        create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)
+
+
+def test_create_draft_rejects_missing_leg(con):
+    # Insert a position with only a LONG leg
+    now = int(time.time() * 1000)
+    con.execute(
+        "INSERT INTO pm_positions (position_id, venue, status, created_at_ms, updated_at_ms, base, strategy_type) "
+        "VALUES ('pos_Y','hyperliquid','OPEN',?,?,'GOOG','SPOT_PERP')",
+        (now, now),
+    )
+    con.execute(
+        "INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size, status, opened_at_ms, account_id) "
+        "VALUES ('pos_Y_SPOT','pos_Y','hyperliquid','GOOG','LONG',0,'OPEN',?, '0xMAIN')",
+        (now,),
+    )
+    con.commit()
+    with pytest.raises(TradeCreateError, match="LONG or SHORT"):
+        create_draft_trade(con, "pos_Y", "OPEN", 1000, 2000)
+
+
+def test_create_draft_rejects_one_sided_fills(con):
+    # Delete all short fills so long has fills but short is empty
+    con.execute("DELETE FROM pm_fills WHERE leg_id='pos_X_PERP'")
+    con.commit()
+    with pytest.raises(TradeCreateError, match="no fills"):
+        create_draft_trade(con, "pos_X", "OPEN", 1000, 2000)

@@ -277,9 +277,10 @@ def create_draft_trade(
     long_fills = _fetch_window_fills(con, long_leg["leg_id"], long_side_filter, start_ts, end_ts)
     short_fills = _fetch_window_fills(con, short_leg["leg_id"], short_side_filter, start_ts, end_ts)
 
-    if not long_fills and not short_fills:
+    if not long_fills or not short_fills:
         raise TradeCreateError(
-            "no fills in window (empty window, already linked to another trade, or wrong wallet)"
+            "no fills in window for one or both legs "
+            "(empty window, already linked to another trade, or wrong leg/side)"
         )
 
     long_agg = aggregate_fills(long_fills)
@@ -292,8 +293,12 @@ def create_draft_trade(
         if opens:
             realized_pnl_bps = compute_realized_pnl_bps(opens, spread_bps)
 
+    stamp = datetime.fromtimestamp(start_ts / 1000, tz=timezone.utc).strftime("%Y%m%d%H%M")
+    id_prefix = f"trd_{base}_{stamp}_{trade_type.lower()}"
     existing_ids = {
-        r[0] for r in con.execute("SELECT trade_id FROM pm_trades").fetchall()
+        r[0] for r in con.execute(
+            "SELECT trade_id FROM pm_trades WHERE trade_id LIKE ?", (f"{id_prefix}%",)
+        ).fetchall()
     }
     trade_id = resolve_trade_id(base, trade_type, start_ts, existing_ids)
 

@@ -8,6 +8,9 @@
 # Market data (hourly at :20)
 20 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_hyperliquid_v3.py >> /app/logs/pull_hyperliquid.log 2>&1
 
+# Loris funding rates (hourly at :10)
+10 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pull_loris_funding.py >> /app/logs/pull_loris_funding.log 2>&1
+
 # Computation pipeline (hourly at :30)
 30 * * * * cd /app && env $(cat /etc/environment | xargs) python scripts/pipeline_hourly.py >> /app/logs/pipeline_hourly.log 2>&1
 

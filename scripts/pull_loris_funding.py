@@ -81,47 +81,63 @@ def ensure_header(path: str) -> None:
         w.writerow(["timestamp_utc", "exchange", "symbol", "oi_rank", "funding_8h_scaled", "funding_8h_rate"])
 
 
+def log(msg: str) -> None:
+    ts = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    print(f"[{ts}] {msg}", flush=True)
+
+
 def main() -> int:
-    cfg = load_cfg()
-    target_exchanges = normalize_target_exchanges(cfg.get("target_exchanges", []))
-    oi_rank_max = int(cfg.get("oi_rank_max", 200))
+    log(f"pull_loris_funding START url={URL} out={OUT_PATH}")
+    try:
+        cfg = load_cfg()
+        target_exchanges = normalize_target_exchanges(cfg.get("target_exchanges", []))
+        oi_rank_max = int(cfg.get("oi_rank_max", 200))
+        log(f"config target_exchanges={sorted(target_exchanges)} oi_rank_max={oi_rank_max}")
 
-    payload = http_get_json(URL)
-    ts = utc_now_iso()
+        payload = http_get_json(URL)
+        ts = utc_now_iso()
 
-    oi_map = payload.get("oi_rankings", {}) or {}
-    funding = payload.get("funding_rates", {}) or {}
+        oi_map = payload.get("oi_rankings", {}) or {}
+        funding = payload.get("funding_rates", {}) or {}
+        venues_in_payload = list(funding.keys())
+        log(f"api_response venues={venues_in_payload} oi_symbols={len(oi_map)}")
 
-    ensure_header(OUT_PATH)
+        ensure_header(OUT_PATH)
 
-    rows = 0
-    with open(OUT_PATH, "a", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        for ex, ex_map in funding.items():
-            ex_norm = normalize_exchange_name(ex)
-            if target_exchanges and ex_norm not in target_exchanges:
-                continue
-            if not isinstance(ex_map, dict):
-                continue
-            for sym, scaled in ex_map.items():
-                rank = oi_rank_to_int(oi_map.get(sym))
-                # If OI rank is missing (mapped to 9999), keep the row so we can
-                # still track new/permissionless listings (e.g., HIP-3) that may not
-                # be ranked yet.
-                if rank != 9999 and rank > oi_rank_max:
+        rows = 0
+        skipped_exchange = 0
+        skipped_rank = 0
+        with open(OUT_PATH, "a", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            for ex, ex_map in funding.items():
+                ex_norm = normalize_exchange_name(ex)
+                if target_exchanges and ex_norm not in target_exchanges:
+                    skipped_exchange += len(ex_map) if isinstance(ex_map, dict) else 0
                     continue
-                # Loris "scaled" is typically an integer, but some venues (e.g. HIP-3)
-                # return fractional scaled values. Preserve precision.
-                try:
-                    scaled_f = float(scaled)
-                except Exception:
+                if not isinstance(ex_map, dict):
                     continue
-                rate = scaled_f / 10000.0  # 8h-equivalent funding rate as fraction
-                w.writerow([ts, ex_norm, sym, rank, scaled_f, rate])
-                rows += 1
+                for sym, scaled in ex_map.items():
+                    rank = oi_rank_to_int(oi_map.get(sym))
+                    if rank != 9999 and rank > oi_rank_max:
+                        skipped_rank += 1
+                        continue
+                    try:
+                        scaled_f = float(scaled)
+                    except Exception:
+                        log(f"WARN bad scaled value ex={ex_norm} sym={sym} val={scaled!r}")
+                        continue
+                    rate = scaled_f / 10000.0
+                    w.writerow([ts, ex_norm, sym, rank, scaled_f, rate])
+                    rows += 1
 
-    print(f"appended_rows={rows} out={OUT_PATH}")
-    return 0
+        log(f"pull_loris_funding DONE appended_rows={rows} skipped_exchange={skipped_exchange} skipped_rank={skipped_rank} out={OUT_PATH}")
+        return 0
+
+    except Exception as exc:
+        import traceback
+        log(f"pull_loris_funding FAILED error={exc!r}")
+        traceback.print_exc(file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

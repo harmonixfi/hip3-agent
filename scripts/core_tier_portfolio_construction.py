@@ -62,6 +62,7 @@ class CoreCandidate:
     effective_apr_anchor: float | None = None
     breakeven_estimate_days: float | None = None
     breakeven_notional_usd: float | None = None
+    positive_share: float | None = None  # % of samples > 0 in lookback window
     funding_samples: list[tuple[datetime, float, int | None]] = field(default_factory=list)
 
 
@@ -117,7 +118,12 @@ def _dedupe_flags(flags: Iterable[str]) -> list[str]:
 
 def _load_funding_groups(
     loris_csv: Path,
+    *,
+    approved_venues: tuple[str, ...] | None = None,
+    equity_venues: frozenset[str] | None = None,
 ) -> tuple[dict[tuple[str, str], list[tuple[datetime, float, int | None]]], set[str]]:
+    _approved = approved_venues if approved_venues is not None else APPROVED_FUNDING_VENUES
+    _equity = equity_venues if equity_venues is not None else EQUITY_VENUES
     grouped: dict[tuple[str, str], list[tuple[datetime, float, int | None]]] = {}
     seen_venues: set[str] = set()
     if not loris_csv.exists():
@@ -127,7 +133,7 @@ def _load_funding_groups(
         reader = csv.DictReader(handle)
         for row in reader:
             venue = str(row.get("exchange") or "").strip().lower()
-            if venue not in APPROVED_FUNDING_VENUES:
+            if venue not in _approved:
                 continue
             seen_venues.add(venue)
             symbol = normalize_symbol(row.get("symbol") or "")
@@ -136,7 +142,7 @@ def _load_funding_groups(
                 continue
             # Equity venues: drop weekend samples (Sat=5, Sun=6) since tradfi
             # market is closed and crypto-side funding spikes are noise.
-            if venue in EQUITY_VENUES and ts.weekday() >= 5:
+            if venue in _equity and ts.weekday() >= 5:
                 continue
             try:
                 rate = float(row.get("funding_8h_rate") or "")
@@ -322,6 +328,12 @@ def score_candidate(candidate: CoreCandidate) -> CoreCandidate:
         )
     candidate.funding_consistency_score = consistency_score
 
+    if candidate.funding_samples:
+        lookback_days = 30 if (candidate.latest_ts - candidate.funding_samples[0][0]).days >= 30 else 14
+        since_dt = candidate.latest_ts - timedelta(days=lookback_days)
+        relevant = [r for ts, r, _ in candidate.funding_samples if ts >= since_dt]
+        candidate.positive_share = (sum(1 for r in relevant if r > 0) / len(relevant) * 100.0) if relevant else None
+
     trend_score, trend_flags = _trend_alignment_score(candidate)
     candidate.trend_alignment_score = trend_score
 
@@ -347,17 +359,23 @@ def load_core_candidates(
     felix_cache: Path,
     now: datetime | None = None,
     hyperliquid_spot_symbols: set[str] | None = None,
+    approved_venues: tuple[str, ...] | None = None,
+    equity_venues: frozenset[str] | None = None,
+    felix_only: bool = False,
 ) -> CandidateBundle:
     now_utc = _now_utc(now)
     if not loris_csv.exists():
         return CandidateBundle("DEGRADED", ["missing loris csv"], [])
 
-    grouped, seen_venues = _load_funding_groups(loris_csv)
+    grouped, seen_venues = _load_funding_groups(
+        loris_csv, approved_venues=approved_venues, equity_venues=equity_venues
+    )
     if not grouped:
         return CandidateBundle("DEGRADED", ["no valid funding rows in csv"], [])
 
+    _approved = approved_venues if approved_venues is not None else APPROVED_FUNDING_VENUES
     warnings: list[str] = []
-    for venue in APPROVED_FUNDING_VENUES:
+    for venue in _approved:
         if venue not in seen_venues:
             warnings.append(f"VENUE_DATA_MISSING:{venue}")
 
@@ -373,6 +391,8 @@ def load_core_candidates(
     candidates: list[CoreCandidate] = []
 
     for (venue, symbol), samples in sorted(grouped.items()):
+        if felix_only and symbol not in felix_symbols:
+            continue
         latest_ts, latest_rate, oi_rank = samples[-1]
         latest_hours = (now_utc - latest_ts).total_seconds() / 3600.0
         apr_latest = annualize_apr(latest_rate)

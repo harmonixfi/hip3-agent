@@ -160,6 +160,7 @@ CSV_FIELDS = [
     "pair_quality_score", "stability_score", "effective_apr_anchor",
     "oi_rank", "breakeven_estimate_days",
     "apr_latest", "apr_1d", "apr_3d", "apr_7d", "apr_14d",
+    "positive_share",
     "spot_on_hyperliquid", "spot_on_felix",
     "freshness_hours", "flags",
 ]
@@ -184,6 +185,7 @@ def _export_csv(path: Path, candidates: list[CoreCandidate], snapshot: str) -> N
                 "apr_3d": _format_float(c.apr_3d, ".2f"),
                 "apr_7d": _format_float(c.apr_7d, ".2f"),
                 "apr_14d": _format_float(c.apr_14d, ".2f"),
+                "positive_share": _format_float(c.positive_share, ".1f"),
                 "spot_on_hyperliquid": c.spot_on_hyperliquid,
                 "spot_on_felix": c.spot_on_felix,
                 "freshness_hours": _format_float(c.freshness_hours, ".1f") if hasattr(c, "freshness_hours") and c.freshness_hours is not None else "",

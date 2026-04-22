@@ -21,6 +21,10 @@ STALE_HOURS = 12.0
 GAP_DAYS = 2.0
 SAMPLE_14D_MIN = 16
 
+# Legacy mislabeled data: these symbols appear under venue=hyperliquid but were
+# actually tradexyz/felix/kinetiq. They stopped ~2026-01-14. Ignore them.
+LEGACY_HL_CUTOFF = datetime(2026, 2, 1, tzinfo=timezone.utc)
+
 now = datetime.now(timezone.utc)
 cutoff_14d = now - timedelta(days=14)
 
@@ -34,6 +38,10 @@ def load_series() -> dict[tuple[str, str], list[datetime]]:
             series[(row["exchange"], row["symbol"])].append(ts)
     for key in series:
         series[key].sort()
+    # Drop legacy mislabeled hyperliquid stock rows
+    legacy = {k for k, tss in series.items() if k[0] == "hyperliquid" and max(tss) < LEGACY_HL_CUTOFF}
+    for k in legacy:
+        del series[k]
     return series
 
 
@@ -108,8 +116,11 @@ def main():
     low_sample_rows.sort(key=lambda x: x[2])
 
     # ── Felix equity coverage ──────────────────────────────────────────────
-    felix_in_csv = {s for (v, s) in series if v == "felix"}
-    felix_missing = [s for s in felix_equities if s not in felix_in_csv]
+    # Felix equities are spot equity tokens — a symbol counts as covered if it
+    # appears in ANY venue (tradexyz, felix, kinetiq, hyena, hyperliquid)
+    all_symbols_in_csv = {s for (v, s) in series}
+    felix_in_csv = all_symbols_in_csv  # coverage is cross-venue
+    felix_missing = [s for s in felix_equities if s not in all_symbols_in_csv]
     felix_missing.sort()
 
     # ── write report ───────────────────────────────────────────────────────
@@ -150,11 +161,11 @@ def main():
     h(f"## Felix Equity Coverage")
     h(f"")
     h(f"- **Total Felix equities defined:** {len(felix_equities)}")
-    h(f"- **Symbols with data in CSV (felix venue):** {len(felix_in_csv)}")
-    h(f"- **Symbols MISSING from CSV:** {len(felix_missing)}")
+    h(f"- **Symbols with data in CSV (any venue):** {len([s for s in felix_equities if s in all_symbols_in_csv])}")
+    h(f"- **Symbols MISSING from CSV (all venues):** {len(felix_missing)}")
     h(f"")
     if felix_missing:
-        h(f"Missing symbols (no rows in `felix` venue):")
+        h(f"Missing symbols (no rows in any venue):")
         h(f"")
         # group in rows of 10 for readability
         for i in range(0, len(felix_missing), 10):
@@ -212,7 +223,8 @@ def main():
         s = venue_stats[venue]
         print(f"  {venue:15s}  {s['symbols']:3d} symbols  {s['rows']:7,} rows  "
               f"last: {s['last'].strftime('%Y-%m-%d %H:%M')}")
-    print(f"\nFélix equities: {len(felix_in_csv)}/{len(felix_equities)} in CSV "
+    covered = len([s for s in felix_equities if s in all_symbols_in_csv])
+    print(f"\nFélix equities: {covered}/{len(felix_equities)} covered across all venues "
           f"({len(felix_missing)} missing)")
     print(f"Stale:     {len(stale_rows)}")
     print(f"Gaps:      {len(gap_rows)}")

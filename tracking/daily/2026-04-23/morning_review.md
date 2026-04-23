@@ -102,7 +102,7 @@ pos_copper — ℹ️ TEST
 
 | Item | Amount | Location | Action |
 |------|--------|----------|--------|
-| USDT0 swap order | $49,840 | lending L1 | ⚠️ No open orders found — verify status |
+| USDT0 swap order | ~$28.7k remaining | wallet 0x9653...2fEa L1 | **42.5% filled** (~$21.2k acquired). Active, filling. |
 | Idle USDT0 | $4,976 | lending L1 | Deploy to Felix USDT0 |
 | Idle USDC | $9,300 | spot-perp xyz dex | Redeploy to lending |
 | Idle USDC | $5,043 | unified L1 | Deploy to lending |
@@ -167,11 +167,11 @@ FARTCOIN and LINK reviews were due 2026-04-01. LINK review is now moot (exit). F
 - **Impact:** Eliminates -$0.38/day drag. Frees ~$3k margin.
 - **Caution:** Funding improved from -8.04% → -4.45% in 14 min. Could be recovering toward positive. But the trend over 24h is clearly negative (was at cap rate +10.95% yesterday). Don't wait for recovery — lock profit.
 
-### Priority 2: 🟡 Verify USDT0 Swap Order Status
+### Priority 2: ✅ USDT0 Swap Order — Actively Filling (No Action Needed)
 
-- **What:** HL API shows NO open orders on any wallet. Vault pulse (04:10 UTC) showed $49,840 order at 0.3% filled.
-- **Possible explanations:** Order cancelled, filled (unlikely), or API discrepancy.
-- **Action:** Check manually. If cancelled, decide: re-place at 1.0002 (patient) or 1.0003 (costs $5/per $10k but fills faster). At $24/day opportunity cost on unfunded USDT0 positions, paying 1 bps to accelerate acquisition is justified for any amount >$10k.
+- **Status:** Order on wallet `0x9653...2fEa` — 42.5% filled (~$21.2k acquired, $28.7k remaining at 1.0002 GTC)
+- **Note:** Vault pulse (04:10 UTC) queried wrong wallet address and reported 0.3%. Order is healthy and filling.
+- **Action:** Monitor. Deploy acquired USDT0 to Felix USDT0 as it accumulates. At current fill rate, remaining $28.7k should clear within hours. No need to bump price.
 
 ### Priority 3: Deploy Idle USDT0 ($4,976)
 
@@ -236,7 +236,7 @@ FARTCOIN and LINK reviews were due 2026-04-01. LINK review is now moot (exit). F
 
 **What:** The $49,840 USDT0 limit order at 1.0002 filled 0.3% in 24+ hours. At this rate, acquiring the remaining ~$175k USDT0 needed takes months. Felix USDT0 stays at 25% of target ($25k of $100k), HypurrFi USDT0 stays at 0%. The USDT0-dependent yield ($42/day from Felix USDT0 + $17/day from HypurrFi USDT0) never materializes.
 
-**Probability:** Medium-High (50-60%). The USDT0/USDC book has $58k at the 1.0002 bid level — our order competes with $58k of existing bids. Ask is at 1.0004, so the 2-bps gap means fills only happen when someone market-sells USDT0 into the bid.
+**Probability:** Low-Medium (20-30%). ~~UPDATE: Order is 42.5% filled as of 04:24 UTC~~ — USDT0 acquisition is progressing. Remaining risk is fill pace for the last ~$28.7k and whether the $100k HypurrFi allocation can be sourced after this order completes.
 
 **Impact:** -$44/day from USDT0 positions not funded. Blended APY stuck at ~5.2% instead of 6%. Annual shortfall: ~$16k.
 

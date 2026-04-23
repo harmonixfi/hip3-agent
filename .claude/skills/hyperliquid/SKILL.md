@@ -239,11 +239,17 @@ python3 .claude/skills/hyperliquid/hyperliquid_api.py --usdt0
 python3 .claude/skills/hyperliquid/hyperliquid_api.py --open-orders 0xYourWallet
 python3 .claude/skills/hyperliquid/hyperliquid_api.py --open-orders 0x... --filter BTC
 
+# Full position snapshot — perps (all builder dexes) + spot balances + USD values
+python3 .claude/skills/hyperliquid/hyperliquid_api.py --positions 0xYourWallet
+python3 .claude/skills/hyperliquid/hyperliquid_api.py --positions 0x... --dex hyna,xyz,flx
+python3 .claude/skills/hyperliquid/hyperliquid_api.py --positions 0x... --json
+
 # JSON output for agent parsing
 python3 .claude/skills/hyperliquid/hyperliquid_api.py --perp-meta --json
 python3 .claude/skills/hyperliquid/hyperliquid_api.py --book HYPE --json
 python3 .claude/skills/hyperliquid/hyperliquid_api.py --usdt0 --json
 python3 .claude/skills/hyperliquid/hyperliquid_api.py --open-orders 0x... --json
+python3 .claude/skills/hyperliquid/hyperliquid_api.py --positions 0x... --json
 ```
 
 #### Output Fields
@@ -291,6 +297,21 @@ python3 .claude/skills/hyperliquid/hyperliquid_api.py --open-orders 0x... --json
 | OID | Order ID (use for cancel requests) |
 
 Orders are sorted by coin then by notional descending. Use `--filter SYMBOL` to narrow.
+
+**`--positions ADDRESS`**:
+
+| Field | Description |
+|-------|-------------|
+| Inst ID | `coin` for native, `dex:coin` for builder dexes (hyna, xyz, flx) |
+| Side | LONG or SHORT |
+| Size | Position size in base token |
+| Entry / Mark | Entry price and current mark price (derived from positionValue) |
+| Notional | Mark-to-market position value in USD |
+| uPnL | Unrealized P&L in USD |
+| Funding | Cumulative funding since open (positive = received) |
+
+Also shows spot token balances with USD values, and per-dex account values.
+Default builder dexes: `hyna,xyz,flx`. Override with `--dex DEX1,DEX2`.
 
 #### Known Limitations
 

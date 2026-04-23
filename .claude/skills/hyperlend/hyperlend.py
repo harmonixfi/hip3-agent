@@ -2,8 +2,8 @@
 """Hyperlend CLI — fetch lending/borrowing rates and market data.
 
 Usage:
-    python scripts/hyperlend.py rates [--tokens USDC,HYPE] [--raw]
-    python scripts/hyperlend.py markets [--tokens USDC,HYPE]
+    python scripts/hyperlend.py rates [--tokens USDC,HYPE] [--raw] [--address 0x...]
+    python scripts/hyperlend.py markets [--tokens USDC,HYPE] [--address 0x...]
     python scripts/hyperlend.py history --token USDC [--hours 168]
 """
 
@@ -13,12 +13,25 @@ import argparse
 import json
 import sys
 import time
+import urllib.error
+import urllib.request
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 BASE_URL = "https://api.hyperlend.finance"
 CHAIN = "hyperEvm"
+DEFAULT_RPC = "https://rpc.hyperliquid.xyz/evm"
+
+# HyperLend core contract addresses
+HL_POOL = "0x00A89d7a5A02160f20150EbEA7a2b5E4879A1A8b"
+HL_DATA_PROVIDER = "0x4f4d4cA1e0a8A21FE0B460613bEbe917f2eb4326"
+
+# 4-byte selectors
+SEL_GET_USER_ACCOUNT_DATA = "0xbf92857c"   # getUserAccountData(address)
+SEL_GET_USER_RESERVE_DATA = "0x28dd2d01"   # getUserReserveData(address,address)
+
+UINT256_MAX = 2**256 - 1
 
 TOKEN_ADDRESSES: Dict[str, str] = {
     "HYPE": "0x5555555555555555555555555555555555555555",
@@ -52,6 +65,147 @@ def _get(path: str, params: Optional[Dict[str, str]] = None) -> Any:
         resp = client.get(f"{BASE_URL}{path}", params=params or {})
         resp.raise_for_status()
         return resp.json()
+
+
+# ── RPC CLIENT (stdlib only) ──────────────────────────────────────────────────
+
+_rpc_id = 0
+
+def _eth_call(to: str, data: str, rpc: str = DEFAULT_RPC) -> Optional[str]:
+    global _rpc_id
+    _rpc_id += 1
+    payload = json.dumps({
+        "jsonrpc": "2.0", "method": "eth_call",
+        "params": [{"to": to, "data": data}, "latest"],
+        "id": _rpc_id,
+    }).encode()
+    for attempt in range(2):
+        try:
+            req = urllib.request.Request(
+                rpc, data=payload, headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                body = json.loads(resp.read())
+                result = body.get("result")
+                return result if result and result != "0x" else None
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            if attempt == 0:
+                time.sleep(0.5)
+            else:
+                print(f"[error] RPC call failed: {exc}", file=sys.stderr)
+    return None
+
+
+def _enc_addr(addr: str) -> str:
+    return addr.lower().replace("0x", "").zfill(64)
+
+
+def _words(raw: Optional[str]) -> List[int]:
+    if not raw:
+        return []
+    data = raw.replace("0x", "")
+    return [int(data[i:i+64], 16) for i in range(0, len(data), 64) if len(data[i:i+64]) == 64]
+
+
+def _u256(raw: Optional[str], idx: int) -> Optional[int]:
+    w = _words(raw)
+    return w[idx] if idx < len(w) else None
+
+
+# ── USER POSITION QUERIES ─────────────────────────────────────────────────────
+
+def fetch_user_positions(user_addr: str, rates_by_addr: Dict[str, Any], rpc: str = DEFAULT_RPC) -> Dict[str, Any]:
+    addr_arg = _enc_addr(user_addr)
+
+    # Overall account summary
+    acct_raw = _eth_call(HL_POOL, SEL_GET_USER_ACCOUNT_DATA + addr_arg, rpc)
+    collateral_usd = (_u256(acct_raw, 0) or 0) / 1e8
+    debt_usd       = (_u256(acct_raw, 1) or 0) / 1e8
+    hf_raw         = _u256(acct_raw, 5)
+    health_factor  = hf_raw / 1e18 if hf_raw and hf_raw < UINT256_MAX else None
+
+    # Per-token balances via ProtocolDataProvider.getUserReserveData(asset, user)
+    positions = []
+    for symbol, token_addr in TOKEN_ADDRESSES.items():
+        call_data = SEL_GET_USER_RESERVE_DATA + _enc_addr(token_addr) + addr_arg
+        raw = _eth_call(HL_DATA_PROVIDER, call_data, rpc)
+        if not raw:
+            continue
+        a_bal  = _u256(raw, 0)  # currentATokenBalance (supplied)
+        var_debt = _u256(raw, 2)  # currentVariableDebt (borrowed)
+        if not a_bal and not var_debt:
+            continue
+
+        scale = 10 ** (6 if symbol in ("USDC", "USDT", "USDH", "USDHL", "USR") else 8 if symbol in ("UBTC",) else 18)
+
+        supplied = a_bal / scale if a_bal else 0.0
+        borrowed = var_debt / scale if var_debt else 0.0
+
+        rate_info = rates_by_addr.get(token_addr.lower(), {})
+        supply_apy = rate_info.get("supply_apy")
+        borrow_apy = rate_info.get("borrow_apy")
+
+        positions.append({
+            "symbol": symbol,
+            "address": token_addr,
+            "supplied": supplied,
+            "borrowed": borrowed,
+            "supply_apy": supply_apy,
+            "borrow_apy": borrow_apy,
+        })
+
+    return {
+        "address": user_addr,
+        "total_collateral_usd": collateral_usd,
+        "total_debt_usd": debt_usd,
+        "health_factor": health_factor,
+        "positions": positions,
+    }
+
+
+def _fmt_amount(val: float, decimals: int = 2) -> str:
+    if val == 0.0:
+        return "$0.00"
+    if val >= 1_000_000:
+        return f"${val:,.2f}"
+    return f"${val:,.2f}"
+
+
+def _fmt_apy(val: Optional[float]) -> str:
+    return f"{val:.2f}%" if val is not None else "—"
+
+
+def print_user_positions(data: Dict[str, Any]) -> None:
+    addr = data["address"]
+    short = addr[:6] + "..." + addr[-4:]
+    print(f"\n{'='*60}")
+    print(f"  User Positions: {short}")
+    print(f"{'='*60}")
+
+    active = [p for p in data["positions"] if p["supplied"] > 0 or p["borrowed"] > 0]
+    if not active:
+        print("  No active positions.")
+    else:
+        hdrs = ["Asset", "Supplied", "Supply APY", "Borrowed", "Borrow APY"]
+        widths = [8, 16, 11, 16, 11]
+        sep = "  "
+        print(sep.join(h.ljust(w) for h, w in zip(hdrs, widths)))
+        print(sep.join("-" * w for w in widths))
+        for p in active:
+            vals = [
+                p["symbol"],
+                _fmt_amount(p["supplied"]),
+                _fmt_apy(p["supply_apy"]),
+                _fmt_amount(p["borrowed"]),
+                _fmt_apy(p["borrow_apy"]),
+            ]
+            print(sep.join(v.ljust(w) for v, w in zip(vals, widths)))
+
+    hf = data["health_factor"]
+    hf_str = f"{hf:.3f}" if hf is not None else "∞"
+    print(f"\n  Total Collateral: {_fmt_amount(data['total_collateral_usd'])}")
+    print(f"  Total Debt:       {_fmt_amount(data['total_debt_usd'])}")
+    print(f"  Health Factor:    {hf_str}")
 
 
 TOKENS_LOWER: Dict[str, str] = {k.lower(): k for k in TOKEN_ADDRESSES}
@@ -97,6 +251,17 @@ def _resolve_symbol(addr: str, reserves: Optional[List[Dict]] = None) -> str:
     return addr[:10]
 
 
+def _build_rates_by_addr(rates_data: Dict[str, Any]) -> Dict[str, Any]:
+    result = {}
+    for addr, info in rates_data.items():
+        if isinstance(info, dict):
+            result[addr.lower()] = {
+                "supply_apy": round(info.get("supplyAPY", 0), 4),
+                "borrow_apy": round(info.get("borrowAPY", 0), 4),
+            }
+    return result
+
+
 def cmd_rates(args: argparse.Namespace) -> None:
     tokens = _filter_tokens(args.tokens)
     rates_data = _get("/data/markets/rates", {"chain": CHAIN})
@@ -140,7 +305,14 @@ def cmd_rates(args: argparse.Namespace) -> None:
         results.append(entry)
 
     results.sort(key=lambda x: x.get("supply_apr", 0), reverse=True)
-    print(json.dumps({"timestamp": int(time.time()), "chain": CHAIN, "rates": results}, indent=2))
+
+    if args.address:
+        rates_by_addr = _build_rates_by_addr(rates_data)
+        positions = fetch_user_positions(args.address, rates_by_addr, args.rpc)
+        out = {"timestamp": int(time.time()), "chain": CHAIN, "rates": results, "user_positions": positions}
+        print(json.dumps(out, indent=2))
+    else:
+        print(json.dumps({"timestamp": int(time.time()), "chain": CHAIN, "rates": results}, indent=2))
 
 
 def cmd_markets(args: argparse.Namespace) -> None:
@@ -183,7 +355,15 @@ def cmd_markets(args: argparse.Namespace) -> None:
         results.append(entry)
 
     results.sort(key=lambda x: x.get("supply_rate_pct", 0), reverse=True)
-    print(json.dumps({"timestamp": int(time.time()), "chain": CHAIN, "markets": results}, indent=2))
+
+    if args.address:
+        rates_data = _get("/data/markets/rates", {"chain": CHAIN})
+        rates_by_addr = _build_rates_by_addr(rates_data)
+        positions = fetch_user_positions(args.address, rates_by_addr, args.rpc)
+        out = {"timestamp": int(time.time()), "chain": CHAIN, "markets": results, "user_positions": positions}
+        print(json.dumps(out, indent=2))
+    else:
+        print(json.dumps({"timestamp": int(time.time()), "chain": CHAIN, "markets": results}, indent=2))
 
 
 def cmd_history(args: argparse.Namespace) -> None:
@@ -270,9 +450,13 @@ def main() -> None:
     p_rates = sub.add_parser("rates", help="Current supply/borrow APR/APY for all pools")
     p_rates.add_argument("--tokens", help="Comma-separated token symbols to filter (e.g. USDC,HYPE)")
     p_rates.add_argument("--raw", action="store_true", help="Skip market data lookup for symbol resolution")
+    p_rates.add_argument("--address", metavar="0x...", help="Show user supply/borrow positions for this wallet")
+    p_rates.add_argument("--rpc", default=DEFAULT_RPC, help=f"RPC endpoint (default: {DEFAULT_RPC})")
 
     p_markets = sub.add_parser("markets", help="Full market data (risk params, caps, rates)")
     p_markets.add_argument("--tokens", help="Comma-separated token symbols to filter")
+    p_markets.add_argument("--address", metavar="0x...", help="Show user supply/borrow positions for this wallet")
+    p_markets.add_argument("--rpc", default=DEFAULT_RPC, help=f"RPC endpoint (default: {DEFAULT_RPC})")
 
     p_history = sub.add_parser("history", help="Historical hourly rates for a token")
     p_history.add_argument("--token", required=True, help="Token symbol (e.g. USDC)")

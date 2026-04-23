@@ -40,7 +40,7 @@ FELIX_MARKETS: dict[str, str] = {
     "UBTC/USDe":     "0x5fe3ac84f3a2c4e3102c3e6e9accb1ec90c30f6ee87ab1fcafc197b8addeb94c",
     "UBTC/USDT0":    "0x707dddc200e95dc984feb185abf1321cabec8486dca5a9a96fb5202184106e54",
     "UBTC/USDhl":    "0x87272614b7a2022c31ddd7bba8eb21d5ab40a6bcbea671264d59dc732053721d",
-    "wstHYPE/HYPE":  "0xe9a9bb9ed3cc53f4ee9da4eea0370c2c566873d5de807e16559a99907c9ae227",
+    "wstHYPE/HYPE":  "0xbcae0d8e381f600b2919194434a0733899697a4c3b6715a5fa75acf8b84bd755",
     "wstHYPE/USDT0": "0xb39e45107152f02502c001a46e2d3513f429d2363323cdaffbc55a951a69b998",
     "wstHYPE/USDhl": "0x1f79fe1822f6bfe7a70f8e7e5e768efd0c3f10db52af97c2f14e4b71e3130e70",
     "hwHLP/USDhl":   "0xe500760b79e397869927a5275d64987325faae43326daf6be5a560184e30a521",
@@ -50,16 +50,34 @@ FELIX_MARKETS: dict[str, str] = {
     "kHYPE-PT/HYPE": "0x1df0d0ebcdc52069692452cb9a3e5cf6c017b237378141eaf08a05ce17205ed6",
     "kHYPE-PT/USDT0":"0x888679b2af61343a4c7c0da0639fc5ca5fc5727e246371c4425e4d634c09e1f6",
     "kHYPE-PT/USDhl":"0xe0a1de770a9a72a083087fe1745c998426aaea984ddf155ea3d5fbba5b759713",
+    "kHYPE-PT/USDC": "0xcd9898604b9b658fc3295f86d4cd7f02fa3a6b0a573879f1db9b83369f4951fb",
 }
 
-# Felix MetaMorpho lending vaults (6 total). Depositors supply here; curator routes funds.
+# Felix MetaMorpho lending vaults (18 total, across 4 curators).
+# Depositors supply here; curator routes funds into Felix/Morpho markets.
 FELIX_VAULT_ADDRS = [
+    # Felix-curated
     "0x835febf893c6dddee5cf762b0f8e31c5b06938ab",   # Felix USDe
     "0xfc5126377f0efc0041c0969ef9ba903ce67d151e",   # Felix USDT0
     "0x9896a8605763106e57A51aa0a97Fe8099E806bb3",   # Felix USDT0 (Frontier)
     "0x9c59a9389D8f72DE2CdAf1126F36EA4790E2275e",   # Felix USDhl
-    "0x66c71204B70aE27BE6dC3eb41F9aF5868E68fDb6",   # USDhl (Frontier)
+    "0x66c71204B70aE27BE6dC3eb41F9aF5868E68fDb6",   # Felix USDhl (Frontier)
     "0x2900ABd73631b2f60747e687095537B673c06A76",   # Felix HYPE
+    "0x8A862fD6c12f9ad34C9c2ff45AB2b6712e8CEa27",   # Felix USDC
+    "0x808F72b6Ff632fba005C88b49C2a76AB01CAB545",   # Felix USDC (Frontier)
+    "0x207ccaE51Ad2E1C240C4Ab4c94b670D438d2201C",   # Felix USDH
+    "0x274f854b2042DB1aA4d6C6E45af73588BEd4Fc9D",   # Felix USDH (Frontier)
+    # Gauntlet
+    "0x08C00F8279dFF5B0CB5a04d349E7d79708Ceadf3",   # Gauntlet USDC
+    "0x53A333e51E96FE288bC9aDd7cdC4B1EAD2CD2FfA",   # Gauntlet USDT0
+    "0x264a06Fd7A7C9E0Bfe75163b475E2A3cc1856578",   # Gauntlet WHYPE
+    # Hyperithm
+    "0xF0A23671A810995B04A0f3eD08be86797B608D78",   # Hyperithm USDC
+    "0xe5ADd96840F0B908ddeB3Bd144C0283Ac5ca7cA0",   # Hyperithm USDT0
+    "0x92B518e1cD76dD70D3E20624AEdd7D107F332Cff",   # Hyperithm HYPE
+    # MEV Capital
+    "0x3Bcc0a5a66bB5BdCEEf5dd8a659a4eC75F3834d8",   # MEV Capital USDT0
+    "0xd19e3d00f8547f7d108abFD4bbb015486437B487",   # MEV Capital HYPE
 ]
 
 
@@ -270,6 +288,7 @@ def fetch_felix_vaults(gql: GraphQLClient, chain_id: int) -> list[MarketData]:
             is_vault=True,
             vault_apy_pct=_pct(state.get("apy")),
         ))
+    results.sort(key=lambda v: v.tvl if v.tvl is not None else -1, reverse=True)
     return results
 
 

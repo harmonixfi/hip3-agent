@@ -15,15 +15,26 @@ CLI tool at `.claude/skills/hyperlend/hyperlend.py` fetches lending/borrowing da
 python3 .claude/skills/hyperlend/hyperlend.py rates                          # all pools
 python3 .claude/skills/hyperlend/hyperlend.py rates --tokens USDC,HYPE,USDT  # filtered
 python3 .claude/skills/hyperlend/hyperlend.py rates --raw                    # skip symbol resolution (faster)
+python3 .claude/skills/hyperlend/hyperlend.py rates --address 0x...          # include user positions
 ```
 
 Returns `supply_apr`, `supply_apy`, `borrow_apr`, `borrow_apy` as percentages. Pools tagged `core` or `isolated`.
+
+### User positions (supply/borrow balances)
+
+```bash
+python3 .claude/skills/hyperlend/hyperlend.py rates --address 0x...
+python3 .claude/skills/hyperlend/hyperlend.py markets --address 0x...
+```
+
+Queries HyperLend Pool contract on HyperEVM via `eth_call`. Returns per-token supplied/borrowed amounts plus overall account summary (`total_collateral_usd`, `total_debt_usd`, `health_factor`). Only tokens with non-zero balances are returned. Uses `ProtocolDataProvider.getUserReserveData` for per-asset balances and `Pool.getUserAccountData` for USD totals.
 
 ### Market parameters (risk config, caps, LTV)
 
 ```bash
 python3 .claude/skills/hyperlend/hyperlend.py markets                            # all
 python3 .claude/skills/hyperlend/hyperlend.py markets --tokens USDC,wstHYPE,kHYPE
+python3 .claude/skills/hyperlend/hyperlend.py markets --address 0x...            # include user positions
 ```
 
 Returns `ltv_bps`, `liquidation_threshold_bps`, `reserve_factor_bps`, `supply_cap`, `borrow_cap`, `is_frozen`, `borrowing_enabled`.

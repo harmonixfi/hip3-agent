@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hyperliquid API data fetcher — spot/perp metadata, L2 books, funding rates.
+"""Hyperliquid API data fetcher — spot/perp metadata, L2 books, funding rates, positions.
 
 API: POST https://api.hyperliquid.xyz/info — no auth, stdlib only.
 
@@ -12,12 +12,14 @@ Commands:
     --spot-volume [--min-vol N] [--top N]   Top spot pairs by 24h volume
     --usdt0                                 USDT0/USDC swap analysis
     --open-orders ADDRESS [--filter SYM]    Open orders for a wallet
+    --positions ADDRESS [--dex D1,D2,...]   Full position snapshot (perps + spot + value)
 
 Notes:
     - Spot coin format for --book: @N (index from spotMeta)
     - Perp coin format for --book: symbol directly (BNB, HYPE, BTC…)
     - Funding rate from API is per-hour. APR = rate × 8760 × 100
     - USDT0/USDC spot index discovered at runtime from spotMeta
+    - Builder dexes (hyna, xyz, flx) need --dex parameter to query positions
 """
 
 import json
@@ -32,8 +34,11 @@ HL_URL = "https://api.hyperliquid.xyz/info"
 
 # ── HTTP client ────────────────────────────────────────────────────────────────
 
-def hl_post(payload: dict):
-    data = json.dumps(payload).encode()
+def hl_post(payload: dict, dex: str = ""):
+    body = dict(payload)
+    if dex:
+        body["dex"] = dex
+    data = json.dumps(body).encode()
     req = urllib.request.Request(
         HL_URL, data=data,
         headers={"Content-Type": "application/json", "Accept": "application/json"},
@@ -595,6 +600,178 @@ def cmd_open_orders(address: str, filter_text: Optional[str] = None,
         )
 
 
+# ── positions snapshot ─────────────────────────────────────────────────────────
+
+DEFAULT_BUILDER_DEXES = ["hyna", "xyz", "flx"]
+
+def cmd_positions(address: str, dex_list: Optional[list] = None,
+                  json_out: bool = False) -> None:
+    import time as _time
+    addr = address.strip()
+    dexes = dex_list if dex_list else DEFAULT_BUILDER_DEXES
+
+    mode = hl_post({"type": "userAbstraction", "user": addr})
+    account_mode = mode if isinstance(mode, str) else "unknown"
+
+    all_positions = []
+    dex_values = {}
+
+    for dex_name in [""] + dexes:
+        label = dex_name or "native"
+        if dex_name:
+            _time.sleep(0.3)
+        try:
+            state = hl_post({"type": "clearinghouseState", "user": addr}, dex=dex_name)
+        except Exception:
+            dex_values[label] = 0.0
+            continue
+        ms = state.get("marginSummary", {})
+        acct_val = float(ms.get("accountValue") or 0)
+        dex_values[label] = acct_val
+
+        for pos_item in state.get("assetPositions", []):
+            p = pos_item.get("position", {})
+            coin = p.get("coin", "?")
+            szi = float(p.get("szi") or 0)
+            if abs(szi) < 1e-12:
+                continue
+            entry_px = float(p.get("entryPx") or 0)
+            pos_val = float(p.get("positionValue") or 0)
+            mark_px = (pos_val / abs(szi)) if abs(szi) > 1e-12 and pos_val > 0 else entry_px
+            upnl = float(p.get("unrealizedPnl") or 0)
+            cum = p.get("cumFunding", {})
+            cum_since_open = float(cum.get("sinceOpen") or 0)
+            inst_id = coin if ":" in coin else (f"{dex_name}:{coin}" if dex_name else coin)
+            side = "SHORT" if szi < 0 else "LONG"
+            notional = pos_val if pos_val > 0 else abs(szi) * entry_px
+            all_positions.append({
+                "dex": label,
+                "inst_id": inst_id,
+                "coin": coin,
+                "side": side,
+                "size": abs(szi),
+                "entry_px": entry_px,
+                "mark_px": mark_px,
+                "notional_usd": notional,
+                "unrealized_pnl": upnl,
+                "cum_funding": -cum_since_open if side == "SHORT" else cum_since_open,
+            })
+
+    _time.sleep(0.3)
+    spot_state = hl_post({"type": "spotClearinghouseState", "user": addr})
+    balances = spot_state.get("balances", [])
+
+    _time.sleep(0.3)
+    web_data = hl_post({"type": "webData2", "user": addr})
+    spot_ctxs = web_data.get("spotAssetCtxs", [])
+    ctx_prices = {}
+    for ctx in spot_ctxs:
+        coin = ctx.get("coin", "")
+        mid = ctx.get("midPx")
+        if mid and mid != "N/A":
+            try:
+                ctx_prices[coin] = float(mid)
+            except (ValueError, TypeError):
+                pass
+
+    _time.sleep(0.3)
+    spot_meta = hl_post({"type": "spotMeta"})
+    token_names = {t["index"]: t["name"] for t in spot_meta.get("tokens", [])}
+    token_to_uni = {}
+    for uni in spot_meta.get("universe", []):
+        toks = uni.get("tokens", [])
+        if len(toks) >= 2:
+            base_idx = toks[0]
+            quote = token_names.get(toks[1], "")
+            if base_idx not in token_to_uni or quote == "USDC":
+                token_to_uni[base_idx] = uni["index"]
+
+    spot_items = []
+    total_spot = 0.0
+    for b in balances:
+        coin = b.get("coin", "")
+        qty = float(b.get("total") or 0)
+        hold = float(b.get("hold") or 0)
+        token_idx = b.get("token")
+        if abs(qty) < 0.01:
+            continue
+        if coin in ("USDC", "USDE", "USDH"):
+            px = 1.0
+        else:
+            uni_idx = token_to_uni.get(token_idx)
+            ref = f"@{uni_idx}" if uni_idx is not None else None
+            px = ctx_prices.get(ref, 0) if ref else 0
+        val = qty * px
+        total_spot += val
+        spot_items.append({
+            "coin": coin,
+            "quantity": qty,
+            "hold": hold,
+            "price": px,
+            "value_usd": val,
+        })
+
+    if json_out:
+        out = {
+            "address": addr,
+            "account_mode": account_mode,
+            "dex_account_values": dex_values,
+            "perp_positions": all_positions,
+            "spot_balances": spot_items,
+            "spot_total_usd": total_spot,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        print(json.dumps(out, indent=2))
+        return
+
+    print(f"\n=== Positions: {addr[:10]}...{addr[-4:]} ===")
+    print(f"Account mode: {account_mode}")
+
+    print(f"\n--- Perp Positions ---")
+    if all_positions:
+        hdr = f"{'Inst ID':<20} {'Side':<6} {'Size':>12} {'Entry':>10} {'Mark':>10} {'Notional':>10} {'uPnL':>10} {'Funding':>10}"
+        print(hdr)
+        _divider(len(hdr))
+        for p in all_positions:
+            print(
+                f"{p['inst_id']:<20} "
+                f"{p['side']:<6} "
+                f"{fmt_num(p['size']):>12} "
+                f"{fmt_num(p['entry_px'], 4):>10} "
+                f"{fmt_num(p['mark_px'], 4):>10} "
+                f"{fmt_usd(p['notional_usd']):>10} "
+                f"{'$' + format(p['unrealized_pnl'], '+.2f'):>10} "
+                f"{'$' + format(p['cum_funding'], '+.2f'):>10}"
+            )
+    else:
+        print("  No perp positions")
+
+    print(f"\n--- Spot Balances ---")
+    if spot_items:
+        hdr = f"{'Coin':<10} {'Quantity':>14} {'Hold':>14} {'Price':>10} {'Value':>10}"
+        print(hdr)
+        _divider(len(hdr))
+        for s in spot_items:
+            print(
+                f"{s['coin']:<10} "
+                f"{s['quantity']:>14,.4f} "
+                f"{s['hold']:>14,.4f} "
+                f"{s['price']:>10.6f} "
+                f"{fmt_usd(s['value_usd']):>10}"
+            )
+        print(f"{'':>50} {'TOTAL':>10}: {fmt_usd(total_spot)}")
+    else:
+        print("  No spot balances")
+
+    print(f"\n--- Account Values (per dex) ---")
+    for label, val in dex_values.items():
+        marker = " ← no positions" if val > 0 and not any(p["dex"] == label for p in all_positions) else ""
+        if val > 0.01:
+            print(f"  {label:<8}: {fmt_usd(val)}{marker}")
+    total_perp = sum(dex_values.values())
+    print(f"  {'TOTAL':<8}: {fmt_usd(total_perp + total_spot)} (perp {fmt_usd(total_perp)} + spot {fmt_usd(total_spot)})")
+
+
 # ── main ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -616,6 +793,10 @@ def main() -> None:
                         help="USDT0/USDC swap analysis")
     parser.add_argument("--open-orders", metavar="ADDRESS", dest="open_orders",
                         help="Open orders for a wallet (uses frontendOpenOrders)")
+    parser.add_argument("--positions", metavar="ADDRESS",
+                        help="Full position snapshot: perps (all dexes) + spot balances + USD values")
+    parser.add_argument("--dex", metavar="DEX1,DEX2",
+                        help="Builder dexes to query (default: hyna,xyz,flx). Comma-separated.")
     parser.add_argument("--filter", metavar="TEXT",
                         help="Filter by name/symbol substring")
     parser.add_argument("--min-vol", type=float, default=1_000, metavar="USD",
@@ -658,6 +839,12 @@ def main() -> None:
     if args.open_orders:
         cmd_open_orders(address=args.open_orders, filter_text=args.filter,
                         json_out=args.json_out)
+        ran = True
+
+    if args.positions:
+        dex_list = args.dex.split(",") if args.dex else None
+        cmd_positions(address=args.positions, dex_list=dex_list,
+                      json_out=args.json_out)
         ran = True
 
     if not ran:

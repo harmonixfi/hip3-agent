@@ -1,160 +1,253 @@
 # Morning Review — 2026-04-23
 
-**Data:** Morpho/HyperLend/HypurrFi on-chain ~01:33 UTC | HyperLend 7d history via API | No vault pulse today (agent hasn't run)
+**Data:** Vault pulse on-chain ~04:10 UTC | Live rates refreshed ~04:24 UTC via HL API, HyperLend API, Morpho API
 
 ---
 
 ## 1. Portfolio Health
 
-| Metric | Current | Target | Status |
-|--------|---------|--------|--------|
-| Deployed | ~$240k (30%) | $800k (100%) | RED — Day 2, 70% idle |
-| Daily yield (deployed) | ~$25/day | $154/day | RED — 16% of target |
-| Blended APY (deployed) | ~3.8% (HyperLend USDC only) | 7.04% | RED — rate dropped overnight |
-| USDT0 exposure | $0 (0%) | $200k (25%) | N/A — swap pending |
-| Largest protocol (of deployed) | HyperLend 96% | <50% | YELLOW — expected, temporary |
+| Metric | Today | Target | Status |
+|--------|-------|--------|--------|
+| Total Portfolio | $757,847 | $800k | YELLOW (-5.3%) |
+| Deployed % | 86.2% ($653,020) | >85% | GREEN |
+| Daily Yield | $93.60/day | $154/day | RED (60.8% of target) |
+| Blended APY | 5.23% | 7.04% | RED (-181 bps) |
+| USDT0 Exposure | $25,200 (3.3%) | <$200k (25%) | GREEN (under cap, but underfunded) |
+| Largest Protocol | Felix 55.8% ($423k) | <50% | YELLOW (+5.8pts over cap) |
+| Idle Capital | $74,126 (9.8%) | <$20k | RED |
 
-**Interpretation:** Day 2 of deployment. Only HyperLend USDC is live at $230k. Opportunity cost of idle capital: ~$100/day. The good news: yesterday's Felix USDC blocker appears resolved (see below). Rates are softening across the board — urgency to deploy hasn't changed but expected yield is lower than planned.
+**So what:** Deployed percentage hit 86% — ahead of schedule for Day 2. But daily yield is only 61% of target because USDT0 positions are underfunded ($25k of $200k deployed) and LINK is bleeding. The $60/day shortfall breaks down: ~$44/day from missing USDT0 deployment, ~$11/day from rates below plan, ~$10/day from idle capital, ~$2/day from LINK paying funding. The USDT0 bottleneck is the single biggest drag.
+
+Felix concentration at 55.8% is above the 50% cap — $81k of the overage is USDC parked in Felix while waiting for USDT0. Once USDT0 deploys to HypurrFi ($100k), Felix drops to ~43%. Temporary but worth tracking.
 
 ---
 
 ## 2. Position Status
 
-| Position | Live APY | Target | vs Target | 7d Avg | Signal | Action |
-|----------|----------|--------|-----------|--------|--------|--------|
-| HyperLend USDC $230k | 3.82% | 4.36% | -12% | 4.17% | YELLOW | HOLD — rate dipped to 7d low range |
-| Felix USDC $300k | 5.55% | 6.86% | **-19%** | — | YELLOW | **DEPLOY** — vault now detected (see Sec 4) |
-| Felix USDT0 $100k | 13.00% | 15.39% | **-16%** | — | YELLOW | WAITING — need USDT0 |
-| HypurrFi USDT0 $100k | 6.37% | 6.36% | On target | — | GREEN | WAITING — need USDT0 |
-| HyperLend USDT $50k | 5.90% | 5.79% | +2% live | 3.64% 7d | RED | DEPLOY — but 7d avg 37% below target |
-| LINK spot-perp ~$5k | 10.95% | 10.2% | +7% | — | GREEN | HOLD — at cap rate |
-| FARTCOIN spot-perp ~$5k | 10.95% | 12.1% | -10% | — | GREEN | HOLD — at cap rate |
-| COPPER $10k | ON HOLD | TBD | — | — | — | Pending macro |
+### RED — Immediate Attention
 
-**Rate trend: softening.** HyperLend USDC dropped from 4.75% → 3.82% overnight (now at 7d low). Felix USDT0 dropped from 14.72% → 13.00%. Only HypurrFi USDT0 and HyperLend USDT held.
+```
+pos_link_native — 🔴 EXIT
+  Rate: -4.45% APR (live) / -8.04% (vault pulse 04:10 UTC) — improving but still NEGATIVE
+  Amount: $3,084 (342 spot / 336 short)
+  Daily: -$0.38/day (live rate)
+  Lifetime funding earned: $20.67 (native) - $5.98 (hyna dust) = net $14.69
+  Trigger: APR < 8% → RED (breached — funding negative)
+  Note: Funding improved from -8.04% → -4.45% in 14 min, but still paying.
+        At -4.45%, break-even erosion of $14.69 lifetime profit in ~39 days.
+        Exit now to lock in $14.69 profit. Clean up hyna:LINK dust (2.4 short) simultaneously.
+```
+
+### YELLOW — Monitor
+
+```
+lend_hyperlend_usdc — 🟡 HOLD (monitor closely)
+  Rate: 3.74% APR live (3.81% APY) | 7d avg: 4.16% | 7d range: 3.02-4.64%
+  Amount: $230,020 (target $230,000) — 100% deployed ✓
+  Daily: $24.20 (vs $27.47 plan)
+  Trigger: APR < 3% → YELLOW — live rate 74 bps from trigger, 7d min touched 3.02%
+  Note: Rate softening trend — dropped from ~4.6% highs to 3.74% live.
+        7d avg (4.16%) still healthy. Per lesson #8, use 7d avg for decisions.
+        Not actionable yet, but if 7d avg drops below 3.5%, start contingency planning.
+```
+
+```
+lend_felix_usdc_main — 🟡 HOLD
+  Rate: 5.56% APY (live) vs 6.86% target — 130 bps below plan
+  Amount: $381,400 + $12,400 (alt) = $393,800 (target $300k — 131%, includes $81k parked)
+  Daily: $59.86 (vs $56.38 plan — overdeployed compensates lower rate)
+  Trigger: APR < 5% for 3d → GREEN (1 day data only, currently above 5%)
+  Note: Rate 19% below plan target, but absolute yield on $393k exceeds $300k target yield.
+        $81k excess is parked while waiting for USDT0 — will redeploy when USDT0 acquired.
+```
+
+```
+lend_felix_usdt0 — 🟡 SCALING
+  Rate: 11.88% APY (live) vs 15.39% target — 351 bps below plan
+  Amount: $25,200 (target $100,000) — 25% deployed
+  Daily: $8.20 (vs $42.16 at full deployment)
+  Trigger: APR < 8% for 2wk → GREEN (388 bps headroom)
+  Note: USDT0 acquisition is the bottleneck. $74.8k more needed to hit target.
+        At 11.88%, this is the highest-yielding deployed position. Every $10k deployed = $3.26/day.
+```
+
+### GREEN — On Track
+
+```
+pos_fartcoin — ✅ HOLD
+  Rate: 10.95% APR (live, cap rate) — at target
+  Amount: $11,736 (59,944 spot ≈ 60,180 short → delta neutral ✓)
+  Daily: ~$3.52 (cumulative funding: $151.07 — strong performer)
+  Trigger: APR < 8% → GREEN (295 bps headroom)
+  Note: Best spot-perp position. Consistently at cap rate. Multi-dex structure working
+        (native 8,590 short + hyna 51,590 short). No action needed.
+```
+
+```
+lend_felix_usde — ✅ HOLD
+  Rate: 12.41% APY (live)
+  Amount: $4,000
+  Daily: $1.34
+  Note: Small collateral position. Healthy rate.
+```
+
+```
+pos_copper — ℹ️ TEST
+  Amount: $799 (65.92 short xyz + 65.92 long flx)
+  Cumulative funding: $1.40
+  Note: Tiny test position, on hold pending macro research. No action.
+```
+
+### IDLE — Needs Deployment
+
+| Item | Amount | Location | Action |
+|------|--------|----------|--------|
+| USDT0 swap order | $49,840 | lending L1 | ⚠️ No open orders found — verify status |
+| Idle USDT0 | $4,976 | lending L1 | Deploy to Felix USDT0 |
+| Idle USDC | $9,300 | spot-perp xyz dex | Redeploy to lending |
+| Idle USDC | $5,043 | unified L1 | Deploy to lending |
+| Idle USDH | $4,956 | unified L1 | Deploy to Felix USDH (8.69%) |
 
 ---
 
 ## 3. Trigger Check
 
-| Trigger | Threshold | Current | Status |
-|---------|-----------|---------|--------|
-| Felix USDT0 < 8% | < 8% sustained 2wk | 13.00% | GREEN |
-| USDT0 depeg > 1% | > 1% | ~+0.035% | GREEN |
-| USDT0 depeg > 3% | > 3% | ~+0.035% | GREEN |
-| HyperLend USDC < 5% | < 5% for 3+ days | 3.82% live / 4.17% 7d avg | **YELLOW — live rate below 5%, 7d avg holding at 4.17%** |
-| HyperLend USDC < 3% | < 3% | 3.82% (7d min: 3.02%) | YELLOW — 7d min touched 3.02% |
-| HyperLend USDT < 5% | < 5% for 3+ days | 5.90% live / 3.64% 7d avg | **RED — 7d avg already below 5%** |
-| Spot-perp LINK < 8% | < 8% | 10.95% | GREEN (cap rate) |
-| Spot-perp FARTCOIN < 8% | < 8% | 10.95% | GREEN (cap rate) |
+| Trigger | Rule | Current | Headroom | Status |
+|---------|------|---------|----------|--------|
+| LINK funding | APR < 8% | **-4.45% APR** | BREACHED (-12.45pts) | 🔴 RED — exit |
+| HyperLend USDC | APR < 3% | 3.74% live / 4.16% 7d avg | 74 bps live, 116 bps 7d | 🟡 YELLOW |
+| Felix USDC | APR < 5% for 3d | 5.56% | 56 bps above trigger | 🟢 GREEN (only 1 day data) |
+| Felix USDT0 | APR < 8% for 2wk | 11.88% | 388 bps | 🟢 GREEN |
+| HypurrFi USDT0 | APR < 5% | 6.33% (not deployed) | 133 bps | 🟢 GREEN |
+| FARTCOIN funding | APR < 8% | 10.95% | 295 bps | 🟢 GREEN |
+| USDT0 depeg > 1% | > 1% | 2 bps spread | 98 bps | 🟢 GREEN |
+| USDT0 depeg > 3% | > 3% | 2 bps spread | 298 bps | 🟢 GREEN |
+| Any lending < 3% | < 3% | HL USDC 3.74% closest | 74 bps | 🟡 YELLOW |
 
-**HyperLend USDT 7d avg (3.64%) is below the 5% trigger.** The live 5.90% is a utilization spike (7d range: 1.38-5.86%). Per lesson #8, use 7d avg for decisions. At 3.64%, the $50k allocation earns ~$5/day, not the $7.93 projected. Still worth deploying (it's idle otherwise), but set expectations correctly.
+**Multi-day trigger note:** Only 2 days of rates_history data (Apr 22 plan targets + Apr 23 actuals). Cannot evaluate multi-day triggers (Felix USDC "< 5% for 3d", Felix USDT0 "< 8% for 2wk") with confidence yet. Will gain signal over the coming week.
 
 ---
 
-## 4. Yesterday -> Today
+## 4. Yesterday → Today
 
 ### Action Items from Journal (2026-04-22)
 
 | Action | Status |
 |--------|--------|
-| Close hyna:LINK | DONE (Apr 22) |
-| Close OIL_BRENTOIL | DONE (Apr 22) |
-| Deploy $230k USDC to HyperLend | DONE (Apr 22) |
-| Place $30k USDT0 maker buy | DONE — check fill status today |
-| Deploy $300k USDC to Felix USDC | **UNBLOCKED** — Felix USDC vault now detected at 5.55% APY |
-| Deploy $50k USDT to HyperLend USDT | PENDING |
-| Update positions.json with lending | PENDING |
+| Close hyna:LINK leg | ✅ DONE (Apr 22) — but 2.4 short dust remains |
+| Close OIL_BRENTOIL | ✅ DONE (Apr 22) |
+| Deploy $230k USDC to HyperLend | ✅ DONE (Apr 22) |
+| Deploy $300k USDC to Felix USDC Main | ✅ DONE — $381,400 deployed (+$81k parked) |
+| Place $30k USDT0 maker buy | SUPERSEDED — $49,840 order now, but 0.3% filled |
+| Deploy $50k USDT to HyperLend USDT | ⏳ PENDING |
+| Update positions.json with lending | ⏳ PENDING |
+| After $30k fills: place next tranche | ⏳ PENDING — order barely filling |
 
-### Notable Changes
+### Material Changes (yesterday → today)
 
-1. **Felix USDC vault now showing via Morpho API.** Yesterday's vault pulse couldn't find it; today `morpho_rates.py` returns:
-   - **Felix USDC (Main):** 5.55% APY, $20.2M TVL
-   - **Felix USDC (Frontier):** 8.87% APY, $18.1M TVL
-   - Likely: the `morpho_rates.py` skill was updated to include the vault addresses (git shows modified skill files). The vault may have existed all along.
-
-2. **Rate softening across the board.** HyperLend USDC: 4.75% → 3.82%. Felix USDT0: 14.72% → 13.00%. Broad trend, not asset-specific.
-
-3. **HypurrFi USDC Pooled at 11.33% APY** with $342k available liquidity and $3M supply cap (~$900k headroom). Interesting alternative, but our $300k deposit would compress utilization from 84% → 74%, likely dropping rate to ~6-7%.
+1. **Felix USDC deployed** — $393,800 now earning 5.56%. Capital utilization jumped from 30% → 86%. This is the biggest positive development.
+2. **LINK funding flipped negative** — was +10.95% (cap rate), now -4.45%. Shorts paying longs. Exit signal triggered.
+3. **USDT0 order increased to $49,840** — larger than the initial $30k planned, but only 0.3% filled ($149). Order may have been cancelled (no open orders found on any wallet at 04:24 UTC).
+4. **Felix USDT0 partially funded** — $25,200 deployed (was $0 yesterday). Some USDT0 was acquired and deployed.
+5. **Rate softening across board** — Felix USDC 6.86%→5.56%, HyperLend USDC 4.36%→3.74%, Felix USDT0 15.39%→11.88%. Broad-based, not asset-specific.
 
 ### Review Schedule — OVERDUE (22 days)
 
-FARTCOIN and LINK reviews were due 2026-04-01. Both at cap rate so not urgent, but `tracking/REVIEW_SCHEDULE.md` needs updating with new dates and lending position reviews.
+FARTCOIN and LINK reviews were due 2026-04-01. LINK review is now moot (exit). FARTCOIN at cap rate — update REVIEW_SCHEDULE.md with new dates and add lending position reviews (7-day cadence for first month).
 
 ---
 
 ## 5. Today's Plan
 
-### Priority #1: Deploy $300k USDC to Felix USDC
+### Priority 1: 🔴 EXIT LINK Spot-Perp
 
-Felix USDC blocker is resolved. Two options:
+- **What:** Close native LINK short (336 LINK) + clean hyna:LINK dust (2.4 short). Sell 342 LINK0 spot.
+- **Wallet:** spot_perp (0x3c2c)
+- **Why:** Funding negative (-4.45% APR). Every hour costs ~$0.016. Lifetime profit is $14.69 — protect it.
+- **Impact:** Eliminates -$0.38/day drag. Frees ~$3k margin.
+- **Caution:** Funding improved from -8.04% → -4.45% in 14 min. Could be recovering toward positive. But the trend over 24h is clearly negative (was at cap rate +10.95% yesterday). Don't wait for recovery — lock profit.
 
-| Option | APY | TVL | Our % of pool | Risk |
-|--------|-----|-----|---------------|------|
-| Felix USDC Main | 5.55% | $20.2M | 1.5% | LOW — large pool, minimal impact |
-| Felix USDC Frontier | 8.87% | $18.1M | 1.7% | MED — "Frontier" implies higher-risk markets |
+### Priority 2: 🟡 Verify USDT0 Swap Order Status
 
-**Recommendation:** Felix USDC Main for $300k. Rate is 5.55% vs 6.86% target (-19%), but it's the anchor allocation — safety over yield. At 5.55%, daily yield = $45.60 (vs $56.38 planned). The Frontier vault at 8.87% is tempting but "Frontier" curators accept higher-LLTV markets — check the underlying market allocations before committing $300k.
+- **What:** HL API shows NO open orders on any wallet. Vault pulse (04:10 UTC) showed $49,840 order at 0.3% filled.
+- **Possible explanations:** Order cancelled, filled (unlikely), or API discrepancy.
+- **Action:** Check manually. If cancelled, decide: re-place at 1.0002 (patient) or 1.0003 (costs $5/per $10k but fills faster). At $24/day opportunity cost on unfunded USDT0 positions, paying 1 bps to accelerate acquisition is justified for any amount >$10k.
 
-### Priority #2: Deploy $50k USDT to HyperLend USDT
+### Priority 3: Deploy Idle USDT0 ($4,976)
 
-No blocker. Live rate 5.90% but 7d avg 3.64%. At 3.64% realistic rate: $4.99/day. Small allocation, just deploy.
+- **What:** Supply $4,976 USDT0 to Felix USDT0 vault
+- **Wallet:** lending (0x9653), move from L1 → EVM
+- **Impact:** +$1.62/day at 11.88% APY. Small but immediate.
 
-### Priority #3: Check USDT0 order fill
+### Priority 4: Deploy Idle USDH ($4,956)
 
-Yesterday's $30k maker buy was unfilled. Vault pulse showed a separate $4.8k order at 1.0003. Verify both orders — if the 1.0002 order isn't filling, consider adjusting to 1.0003 (taker cost ~$9 on $30k, negligible vs opportunity cost of waiting).
+- **What:** Supply $4,956 USDH to Felix USDH vault (8.69% APY)
+- **Wallet:** unified (0xd473), move from L1 → EVM
+- **Impact:** +$1.18/day
 
-### Priority #4: Update positions.json + REVIEW_SCHEDULE.md
+### Priority 5: Deploy $50k USDT to HyperLend
 
-Add lending positions to registry. Set review dates for all lending positions (suggest 7-day cadence for first month).
+- **What:** Supply $50,000 USDT to HyperLend USDT pool
+- **Wallet:** lending (0x9653)
+- **Impact:** +$7.85/day at 5.73% live (but 7d avg only 3.64% — realistic: +$5/day)
+- **Note:** HyperLend USDT 7d avg is 3.64%, well below the 5.79% plan target. Deploy anyway — idle cash at 0% is worse. But set expectations: $5/day not $8/day.
+
+### Priority 6: Redeploy xyz Margin ($9,300)
+
+- **What:** Withdraw $9,300 idle USDC from spot-perp xyz dex account. Deploy to Felix USDC or HyperLend.
+- **Impact:** +$1.41/day at 5.56% (Felix) or +$0.95/day at 3.74% (HyperLend)
+
+### Priority 7: Update REVIEW_SCHEDULE.md
+
+- Add lending position review dates (7-day cadence through May)
+- Remove LINK (exiting)
+- Update FARTCOIN next review
+- Add Felix USDC, HyperLend USDC, Felix USDT0 review entries
+
+**Total impact of all actions: +$10-12/day** (bringing daily yield from $93.60 → ~$104-106)
 
 ---
 
 ## 6. Challenger Questions
 
-1. **Felix USDC at 5.55% vs plan's 6.86% — that's $10.75/day less than projected.** Combined with Felix USDT0 at 13.00% vs 15.39% target, the two Felix positions project $52.43/day vs $62.53 planned. That's $10.10/day ($3.7k/yr) shortfall from Felix alone. Is the 7.04% blended target still achievable, or should we revise down to ~6.0-6.5%?
+1. **Felix concentration is 55.8% — above the 50% cap you set.** Yes, $81k is "parked while buying USDT0," but that USDT0 order is barely filling (0.3% in 24h+). If USDT0 acquisition takes 2 weeks at this pace, Felix stays above 50% for 2 weeks. Should you move $31k from Felix USDC to HyperLend USDC now to get under the cap, even if HyperLend pays 1.75pts less? The cap exists for a reason — are we suspending it on Day 2?
 
-2. **HyperLend USDC 7d min touched 3.02% — dangerously close to the 3% exit trigger.** Our $230k is the single largest deployed position. If USDC rate drops below 3% sustained, where does $230k go? Felix USDC at 5.55% (but that pushes Felix concentration to $530k = 66%). HypurrFi USDC at 11.33% (but rate will compress). Have the contingency ready before you need it.
+2. **The realistic blended APY is 5.23%, not 7.04%.** Even at full deployment with today's rates, the projection is:
 
-3. **The USDT0 swap hasn't filled in 24h+.** At $0/day on $200k waiting for USDT0, the opportunity cost is ~$24/day (at target USDT0 rates). If the 1.0002 limit order doesn't fill by end of day, the 1 bps taker premium on $200k is $20 — less than one day of opportunity cost. Is patience costing more than the savings?
+   | Position | Amount | Live Rate | Daily $ |
+   |----------|--------|-----------|---------|
+   | Felix USDC | $300k | 5.56% | $45.68 |
+   | HyperLend USDC | $230k | 4.16% (7d) | $26.22 |
+   | Felix USDT0 | $100k | 11.88% | $32.55 |
+   | HypurrFi USDT0 | $100k | 6.33% | $17.34 |
+   | HyperLend USDT | $50k | 3.64% (7d) | $4.99 |
+   | Spot-perp | $10k | 10.95% | $3.00 |
+   | **Total** | **$790k** | **6.02%** | **$129.78** |
+
+   That's $129.78/day — 16% below the $154 target. The shortfall is structural (rates are lower than plan), not just a deployment timing issue. Should we revise the target to 6% and call it realistic, or hunt for the missing $24/day through Frontier vaults or new USDT0 opportunities?
+
+3. **HyperLend USDC 7d min touched 3.02%.** That's 2 bps from the 3% exit trigger. With $230k deployed, an exit means finding a new home for 30% of the portfolio. Felix USDC absorbs it easily (push Felix from 55.8% → 86% concentration — terrible). HypurrFi USDC at 3.85% is barely better than HyperLend. The exit contingency needs a real answer, not "move to Felix." Where does $230k go if HyperLend USDC trips the 3% trigger?
 
 ---
 
 ## 7. Risk Watch
 
-### Scenario: Broad Rate Compression Continues
+### Scenario: USDT0 Acquisition Stalls — Deployment Plan Cannot Complete
 
-**What:** All lending rates dropped overnight. If this is the start of a sustained move (lower borrowing demand, market cooling), our projected 7.04% blended APR could settle closer to 5.5-6.0%.
+**What:** The $49,840 USDT0 limit order at 1.0002 filled 0.3% in 24+ hours. At this rate, acquiring the remaining ~$175k USDT0 needed takes months. Felix USDT0 stays at 25% of target ($25k of $100k), HypurrFi USDT0 stays at 0%. The USDT0-dependent yield ($42/day from Felix USDT0 + $17/day from HypurrFi USDT0) never materializes.
 
-**Probability:** Medium (30-40%). One-day drops are normal volatility, but the breadth (3 of 4 protocols down) is worth watching.
+**Probability:** Medium-High (50-60%). The USDT0/USDC book has $58k at the 1.0002 bid level — our order competes with $58k of existing bids. Ask is at 1.0004, so the 2-bps gap means fills only happen when someone market-sells USDT0 into the bid.
 
-**Impact:** At 5.5% blended, daily yield = $120/day vs $154 target. That's -$34/day or -$12.4k/yr. Manageable but meaningful.
+**Impact:** -$44/day from USDT0 positions not funded. Blended APY stuck at ~5.2% instead of 6%. Annual shortfall: ~$16k.
 
-**Trigger Signal:** If HyperLend USDC 7d avg drops below 3.5% AND Felix USDT0 drops below 10%, the compression is real, not noise.
+**Trigger Signal:** Order fill rate. If <5% filled after 48 hours (by end of Apr 24), stalling is confirmed.
 
 **Pre-planned Response:**
-1. Accept lower blended rate — 5.5-6% on $800k with minimal risk is still strong
-2. Evaluate HypurrFi USDC Pooled ($11.33% today) as partial substitute for HyperLend USDC
-3. Consider Felix USDC Frontier (8.87%) for a portion of the USDC allocation if risk profile is acceptable
-4. Do NOT chase yield into higher-risk assets — the strategy is conservative for a reason
+1. Move order to 1.0003 (eat 1 bps = $17.50 per $175k, breakeven in <1 hour of funding earned)
+2. Or split: $50k market buy at 1.0004 (cost: $20, breakeven <1 day) + $125k limit at 1.0003
+3. Deploy each tranche to Felix USDT0 / HypurrFi immediately upon receipt — don't batch
+4. Worst case: if USDT0 acquisition remains impractical, reallocate $175k target to Felix USDC Frontier (9.37% APY) as USDC-denominated alternative
 
 ---
 
-## Revised Yield Projection (realistic rates)
-
-| Position | Amount | Realistic APY | Daily $ |
-|----------|--------|---------------|---------|
-| Felix USDC | $300,000 | 5.55% | $45.60 |
-| HyperLend USDC | $230,000 | 4.17% (7d avg) | $26.27 |
-| Felix USDT0 | $100,000 | 13.00% | $35.62 |
-| HypurrFi USDT0 | $100,000 | 6.37% | $17.45 |
-| HyperLend USDT | $50,000 | 3.64% (7d avg) | $4.99 |
-| LINK spot-perp | $5,000 | 10.95% | $1.50 |
-| FARTCOIN spot-perp | $5,000 | 10.95% | $1.50 |
-| **Total** | **$790,000** | **6.14%** | **$132.93** |
-
-**Realistic blended: 6.14% APY, $133/day** — 14% below the $154 target. Still solid for a conservative lending portfolio. The gap is mostly from Felix USDC (-$10.78) and HyperLend USDT (-$2.94) underperforming plan.
-
----
-
-*Review generated 2026-04-23 ~01:34 UTC. Next: daily.*
+*Generated 2026-04-23 ~04:24 UTC. Primary source: vault pulse (04:10 UTC on-chain verified). Live rates refreshed via API. Next: daily vault-pulse + morning-review cycle.*

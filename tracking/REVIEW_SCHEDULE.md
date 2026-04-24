@@ -1,44 +1,51 @@
 # Position Review Schedule
 
-Last updated: 2026-03-30
+Last updated: 2026-04-24
 
 ---
 
 ## Active Reviews
 
-| Position | Next Review | Action If Positive | Action If Negative | Notes |
-|----------|-------------|--------------------|--------------------|-------|
-| FARTCOIN | **2026-04-01 (Wed)** | HOLD, consider INCREASE | MONITOR if APR7 drops below 20% | Opened 03-27, 3d APR 41.9%, top performer |
-| HYPE | **2026-04-01 (Wed)** | HOLD | MONITOR if APR7 drops below 15% | Opened 03-27, 3d APR 25.4%, consistent |
-| LINK | **2026-04-01 (Wed)** | HOLD if APR7 > 5% | EXIT — redeploy capital | Opened 03-27, 3d APR 0.9%, 1d recovering 8.9% |
-| GOLD | **2026-04-01 (Wed)** | HOLD | EXIT if APR7 < 3% sustained | Reopened 03-25, avg $0.38/d, 4.7% APR |
+### Lending Positions (7-day cadence)
+
+| Position | Amount | Current APY | Next Review | Trigger | Action If Triggered |
+|----------|--------|-------------|-------------|---------|---------------------|
+| Felix USDC Main | $381,400 | 5.16% | **2026-04-28 (Mon)** | APR < 5% for 3d | Rotate excess $81k to HypurrFi USDC or Felix Frontier |
+| HyperLend USDC | $230,042 | 4.96% | **2026-04-28 (Mon)** | APR < 3% | Exit to Felix/HypurrFi |
+| Felix USDT0 | $55,200 | 12.74% | **2026-05-01 (Thu)** | APR < 8% for 2wk | Rebalance to Felix USDC |
+| Felix USDC (alt) | $10,800 | 5.16% | **2026-05-01 (Thu)** | — | Small, monitor with main |
+| Felix USDe | $3,600 | 8.91% | **2026-05-01 (Thu)** | — | Collateral position |
+
+### Spot-Perp Positions
+
+| Position | Notional | Current APR | Next Review | Trigger | Action If Triggered |
+|----------|----------|-------------|-------------|---------|---------------------|
+| FARTCOIN | $11,982 | 1.78% | **2026-04-26 (Sat)** | APR < 8% (BREACHED) | EXIT if < 5% on Apr 25 pulse. Redeploy to lending. |
+| LINK | $3,193 | 10.95% | **2026-04-28 (Mon)** | APR < 8% | EXIT — funding is binary (cap rate or negative). Quick exit on flip. |
+| LINK hyna dust | $22 | n/a | **2026-04-25 (Fri)** | — | Clean up residual 2.4 short |
+
+### Cross-Venue
+
+| Position | Notional | Next Review | Notes |
+|----------|----------|-------------|-------|
+| COPPER (test) | $800 | **2026-05-01 (Thu)** | Test position. On hold pending macro research. |
+
+### Pending Deployments
+
+| Target | Amount | Status | Review By |
+|--------|--------|--------|-----------|
+| Felix USDT0 (scale to $100k) | $24,760 idle → deploy | Ready NOW | **2026-04-24** |
+| HypurrFi USDT0 | $0 of $100k | Need USDT0 acquisition | **2026-04-28** |
+| HyperLend USDT | $0 of $50k | Pending — check USDT availability | **2026-04-26** |
 
 ---
 
-## Wednesday 01 Apr Review Checklist
+## Concentration Watch
 
-### Pre-Review (pull fresh data)
-- [ ] `pull_loris_funding.py` — fresh funding snapshot
-- [ ] `pull_hyperliquid_v3.py` — fresh market data
-- [ ] `pull_positions_v3.py` — position state
-- [ ] `pm_cashflows.py ingest` — realized cashflows
-
-### Per-Position Evaluation
-- [ ] **FARTCOIN**: Is 7d APR still > 20%? Is 1d trend sustaining above 15%?
-- [ ] **HYPE**: Is 7d APR still > 15%? Any negative funding spikes?
-- [ ] **LINK**: Has 7d APR improved above 5%? If not → EXIT candidate
-- [ ] **GOLD**: Is avg/day improving from $0.38? APR trend direction?
-
-### Decision Framework
-- **HOLD criteria**: 7d APR > 10% AND trend stable or improving
-- **EXIT criteria**: 7d APR < 5% AND no recovery trend in 1d/3d
-- **INCREASE criteria**: 7d APR > 20% AND stable (1d ≈ 3d ≈ 7d)
-
-### Post-Review
-- [ ] Update this file with new review dates
-- [ ] Write journal entry (`tracking/journal/2026-04-01.md`)
-- [ ] Update positions.json if any changes
-- [ ] Sync to DB: `pm.py sync-registry`
+| Protocol | Current | Cap | Status | Review |
+|----------|---------|-----|--------|--------|
+| Felix/Morpho | 60.9% ($451k) | 50% | 🔴 OVER | Reduces when HypurrFi USDT0 deploys |
+| USDT0 exposure | 7.4% ($55.2k) | 25% ($200k) | 🟢 Under | Scaling per plan |
 
 ---
 
@@ -46,11 +53,11 @@ Last updated: 2026-03-30
 
 | Date | Position | Decision | Rationale |
 |------|----------|----------|-----------|
-| 2026-03-30 | ALL | HOLD all, no changes | 3 days too early for rotation. FARTCOIN/HYPE strong, LINK/GOLD weak but monitoring |
-| 2026-03-28 | ORCL | EXIT (CLOSED) | 15d avg -$1.33, slow recovery, rotated to crypto |
+| 2026-04-23 | LINK | HOLD (overrode EXIT signal) | Funding recovered from -8.04% to +10.95% overnight |
+| 2026-04-22 | OIL_BRENTOIL | EXIT (CLOSED) | Per deployment plan — capital redeployed to lending |
+| 2026-04-22 | hyna:LINK | EXIT (CLOSED) | Restructured to native-only. 2.4 dust remains. |
+| 2026-03-30 | ALL | HOLD all, no changes | 3 days too early for rotation |
+| 2026-03-28 | ORCL | EXIT (CLOSED) | 15d avg -$1.33, slow recovery |
 | 2026-03-28 | MU | EXIT (CLOSED) | +$2.85 lifetime, rotated to crypto |
 | 2026-03-28 | CRCL | EXIT (CLOSED) | +$5.47 lifetime, locked profit |
-| 2026-03-25 | ORCL | Reduce size 55.774 → 22.174, HOLD | 15d avg -$1.89, too large for bleeding position |
 | 2026-03-25 | MSTR | EXIT (CLOSED) | Dead money, $0.02/day on $982 notional |
-| 2026-03-25 | MU | HOLD to Fri review | Small loss, best 1d recovery |
-| 2026-03-25 | CRCL | HOLD to Fri review (override EXIT signal) | Lifetime PnL still positive |

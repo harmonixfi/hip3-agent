@@ -1,0 +1,18 @@
+Position ID,Wallet,Protocol,Asset,Strategy,Amount (tokens),Amount (USD),Current APY %,Daily Yield ($),Status,Trigger Rule,Trigger Status,Data Source,Notes
+lend_felix_usdc_main,lending (0x9653),Felix/Morpho,USDC,Lending,"351,500","351,500",9.02,86.86,ACTIVE,APR<5% for 3d,GREEN,morpho_api,Rate surged to 9.02% APY (from 5.16%). Balance reduced from $381.4K to $351.5K — additional USDC likely moved to USDT0 swap.
+lend_hyperlend_usdc,lending (0x9653),HyperLend,USDC,Lending,"230,073","230,073",5.06,31.91,ACTIVE,APR<3%,GREEN,hyperlend_api,Rate 5.06% APY. 206 bps above 3% exit trigger.
+lend_felix_usdt0,lending (0x9653),Felix/Morpho,USDT0,Lending,"80,000","80,000",5.81,12.73,ACTIVE,APR<8% for 2wk,YELLOW,morpho_api,Rate crashed to 5.81% from 12.74% — first day below 8% threshold. Balance grew to $80K (idle $24.76K deployed). Monitor.
+lend_felix_usdc_alt,spot_perp (0x3c2c),Felix/Morpho,USDC,Lending,"10,800","10,800",9.02,2.67,ACTIVE,,GREEN,morpho_api,Rate benefiting from Felix USDC surge to 9.02%.
+lend_felix_usde,spot_perp (0x3c2c),Felix/Morpho,USDe,Lending,"3,600 USDe","3,600",21.03,2.07,ACTIVE,,GREEN,morpho_api,Rate surged to 21.03% APY (from 8.91%).
+pos_link_native,spot_perp (0x3c2c),Hyperliquid,LINK,Spot-Perp,"342.13 spot / 336 short","3,215",7.59,0.66,ACTIVE,APR<8%,RED,hl_api,Funding dropped from 10.95% to 7.59% APR — below 8% trigger. cumFunding=$21.74. Delta neutral (1.1%).
+pos_link_hyna_dust,spot_perp (0x3c2c),Hyperliquid,hyna:LINK,Spot-Perp (residual),"2.4 short","23",,,,,,hl_api,Residual dust. cumFunding=-$5.97 (paying). Clean up when convenient.
+pos_fartcoin_native,spot_perp (0x3c2c),Hyperliquid,FARTCOIN,Spot-Perp (native leg),"8,590 short","1,709",10.95,0.51,ACTIVE,APR<8%,GREEN,hl_api,FARTCOIN funding RECOVERED to 10.95% from 1.78%. cumFunding=$18.69.
+pos_fartcoin_hyna,spot_perp (0x3c2c),Hyperliquid,hyna:FARTCOIN,Spot-Perp (hyna leg),"51,590 short","10,266",10.95,3.08,ACTIVE,APR<8%,GREEN,hl_api,cumFunding=$144.11. Position earning well again.
+pos_fartcoin_spot,spot_perp (0x3c2c),Hyperliquid,UFART,Spot-Perp (spot leg),"59,944","11,943",,,,,,hl_api,Delta: 59944 spot ≈ 60180 short → neutral (-0.4%)
+xyz_idle_margin,spot_perp (0x3c2c),Hyperliquid,USDC,Idle Margin,,"9,300",0.00,0.00,IDLE,,,hl_api,No positions on xyz dex — redeploy
+order_usdt0,lending (0x9653) L1,Hyperliquid,USDC>USDT0,Swap Order,"0","0",0.00,0.00,CLOSED,,,hl_api,Order completed. ~$49.84K USDC swapped to USDT0.
+idle_usdt0,lending (0x9653) L1,,USDT0,Idle,"29,980","29,980",0.00,0.00,IDLE,,,hl_api,On-chain $29.98K USDT0 on L1 (up from $24.76K — additional swap activity likely). Deploy to Felix USDT0 (5.81% APY) or hold.
+pos_copper_xyz,unified (0xd473),Hyperliquid,xyz:COPPER,Perp-Perp (short),"65.92 short","401",,,,,,hl_api,Entry 6.075. Mark 6.088. cumFunding=$0.44
+pos_copper_flx,unified (0xd473),Hyperliquid,flx:COPPER,Perp-Perp (long),"65.92 long","397",,,,,,hl_api,Entry 6.018. Mark 6.028. cumFunding=$2.14
+idle_usdc_unified,unified (0xd473),,USDC,Idle,"5,043","5,043",0.00,0.00,IDLE,,,hl_api,Total balance. $500 held as xyz margin for COPPER.
+idle_usdh_unified,unified (0xd473),,USDH,Idle,"4,955","4,955",0.00,0.00,IDLE,,,hl_api,Total balance. $399 held as flx margin for COPPER. Consider Felix USDH 8.06% or HypurrFi USDH 5.57%.

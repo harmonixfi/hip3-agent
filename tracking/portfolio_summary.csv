@@ -1,0 +1,4 @@
+date,total_portfolio,total_deployed,total_trading,total_idle,pct_deployed,daily_yield,blended_apy,target_daily,pct_of_target,felix_total,felix_pct,hyperlend_total,hyperlend_pct,hypurrfi_total,hypurrfi_pct,hl_trading,idle_cash,alerts
+2026-04-23,757847,653020,15681,74126,86.2,93.60,5.23,154.00,60.8,423000,55.8,230020,30.4,0,0.0,15681,74126,"LINK funding -8.04% APR — short paying exit critical | HyperLend USDC 3.84% near 3% trigger | $74k idle"
+2026-04-24,741075,681042,15975,44058,91.9,108.39,5.81,154.00,70.4,451000,60.9,230042,31.1,0,0.0,15975,44058,"FARTCOIN APR 1.78% — below 8% trigger review exit | Felix USDC 5.16% softening near 5% | $44k idle (24.76k USDT0 ready to deploy)"
+2026-04-25,741207,675973,15956,49278,91.2,140.49,7.59,154.00,91.2,445900,66.0,230073,34.0,0,0.0,15956,49278,"LINK funding 7.59% APR — below 8% trigger RED | Felix USDT0 rate crashed 12.74%→5.81% first day below 8% YELLOW | $49.3k idle (USDT0 $30k ready to deploy)"

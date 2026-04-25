@@ -1,0 +1,5 @@
+date,felix_usdc_main,felix_usdc_frontier,felix_usdt0,felix_usde,felix_usdh,felix_usdh_frontier,hyperlend_usdc,hyperlend_usdt,hypurrfi_usdt0,hypurrfi_usdc,hypurrfi_usdh,link_funding_apr,fartcoin_funding_apr,usdt0_usdc_spread_bps,notes
+2026-04-22,6.86,,15.39,,,,,5.79,,,,10.20,12.10,,Plan target rates
+2026-04-23,5.55,11.23,11.88,12.24,9.09,9.99,3.84,5.90,6.33,3.85,6.01,-8.04,10.95,2.00,LINK funding turned negative -8.04% APR. Felix USDC 5.55%. HyperLend 3.84%. HypurrFi USDT0 6.33%.
+2026-04-24,5.16,6.85,12.74,8.91,6.47,6.16,4.96,5.55,6.25,7.76,5.56,10.95,1.78,1.00,LINK flipped +10.95% APR. FARTCOIN dropped to 1.78% below 8% trigger. USDT0 swap completed. Felix USDT0 +$30K to $55.2K. HyperLend improved to 4.96%.
+2026-04-25,9.02,10.10,5.81,21.03,8.06,6.56,5.06,5.12,6.13,8.66,5.57,7.59,10.95,2.00,Felix USDC surged to 9.02% APY. Felix USDT0 crashed to 5.81% from 12.74% (below 8% threshold). FARTCOIN funding recovered to 10.95% from 1.78%. LINK dropped to 7.59% below 8% trigger.

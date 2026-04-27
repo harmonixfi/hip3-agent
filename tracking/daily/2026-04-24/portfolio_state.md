@@ -47,7 +47,6 @@
 | **Total Portfolio** | **$741,075** |
 | Deployed (earning yield) | $681,042 (91.9%) |
 | Trading positions | $15,975 (2.2%) |
-| Idle + Pending | $44,058 (5.9%) |
 | **Daily Yield** | **$108.39/day** |
 | **Blended APY (deployed)** | **5.81%** |
 | Plan target | $154/day (7.04%) |

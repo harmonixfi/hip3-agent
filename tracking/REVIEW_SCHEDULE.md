@@ -1,6 +1,6 @@
 # Position Review Schedule
 
-Last updated: 2026-04-24
+Last updated: 2026-04-27
 
 ---
 
@@ -10,33 +10,35 @@ Last updated: 2026-04-24
 
 | Position | Amount | Current APY | Next Review | Trigger | Action If Triggered |
 |----------|--------|-------------|-------------|---------|---------------------|
-| Felix USDC Main | $381,400 | 5.16% | **2026-04-28 (Mon)** | APR < 5% for 3d | Rotate excess $81k to HypurrFi USDC or Felix Frontier |
-| HyperLend USDC | $230,042 | 4.96% | **2026-04-28 (Mon)** | APR < 3% | Exit to Felix/HypurrFi |
-| Felix USDT0 | $55,200 | 12.74% | **2026-05-01 (Thu)** | APR < 8% for 2wk | Rebalance to Felix USDC |
-| Felix USDC (alt) | $10,800 | 5.16% | **2026-05-01 (Thu)** | — | Small, monitor with main |
-| Felix USDe | $3,600 | 8.91% | **2026-05-01 (Thu)** | — | Collateral position |
+| Felix USDC Main | $351,600 | 7.44% | **2026-04-28 (Mon)** | APR < 5% for 3d | Rotate excess above $300k to HypurrFi USDC or HyperLend |
+| HyperLend USDC | $230,125 | 5.56% | **2026-04-28 (Mon)** | APR < 3% | Exit to Felix/HypurrFi |
+| Felix USDT0 | $110,000 | 13.38% | **2026-05-04 (Sun)** | APR < 8% for 2wk | Rebalance to Felix USDC or HypurrFi |
+| Felix USDC (alt) | $10,800 | 7.44% | **2026-05-04 (Sun)** | — | Small, monitor with main |
+| Felix USDe | $3,600 | 15.00% | **2026-05-04 (Sun)** | — | Collateral position |
 
 ### Spot-Perp Positions
 
 | Position | Notional | Current APR | Next Review | Trigger | Action If Triggered |
 |----------|----------|-------------|-------------|---------|---------------------|
-| FARTCOIN | $11,982 | 1.78% | **2026-04-26 (Sat)** | APR < 8% (BREACHED) | EXIT if < 5% on Apr 25 pulse. Redeploy to lending. |
-| LINK | $3,193 | 10.95% | **2026-04-28 (Mon)** | APR < 8% | EXIT — funding is binary (cap rate or negative). Quick exit on flip. |
-| LINK hyna dust | $22 | n/a | **2026-04-25 (Fri)** | — | Clean up residual 2.4 short |
+| FARTCOIN | $12,656 | 10.95% | **2026-05-01 (Thu)** | APR < 8% | Exit, redeploy $12k to lending. Funding is binary (cap or dead). |
+| LINK | $3,261 | 10.95% | **2026-05-01 (Thu)** | APR < 8% | Exit — funding is binary. Quick exit on flip. |
+| LINK hyna dust | $23 | n/a | **2026-04-28 (Mon)** | — | Clean up residual 2.4 short (paying -$5.96 cumulative) |
 
 ### Cross-Venue
 
 | Position | Notional | Next Review | Notes |
 |----------|----------|-------------|-------|
-| COPPER (test) | $800 | **2026-05-01 (Thu)** | Test position. On hold pending macro research. |
+| COPPER (test) | $801 | **2026-05-04 (Sun)** | Test position. On hold pending macro research. cumFunding $2.96. |
 
 ### Pending Deployments
 
 | Target | Amount | Status | Review By |
 |--------|--------|--------|-----------|
-| Felix USDT0 (scale to $100k) | $24,760 idle → deploy | Ready NOW | **2026-04-24** |
-| HypurrFi USDT0 | $0 of $100k | Need USDT0 acquisition | **2026-04-28** |
-| HyperLend USDT | $0 of $50k | Pending — check USDT availability | **2026-04-26** |
+| HypurrFi USDT0 | $0 of $100k | Blocked — no idle USDT0, need USDC→USDT0 swap | **2026-04-28 (Mon)** — decide: swap or deprioritize |
+| HyperLend USDT | $0 of $50k | Blocked — need USDT availability or USDC→USDT swap | **2026-04-28 (Mon)** — 5 days overdue |
+| Idle xyz USDC | $9,300 | Ready to deploy → HypurrFi USDC (8.30%) | **2026-04-28 (Mon)** |
+| Idle USDH | $4,556 free | Ready to deploy → Felix USDH (11.31%) | **2026-04-28 (Mon)** |
+| Idle USDC unified | $4,544 free | Ready to deploy → HypurrFi USDC (8.30%) | **2026-04-28 (Mon)** |
 
 ---
 
@@ -44,8 +46,8 @@ Last updated: 2026-04-24
 
 | Protocol | Current | Cap | Status | Review |
 |----------|---------|-----|--------|--------|
-| Felix/Morpho | 60.9% ($451k) | 50% | 🔴 OVER | Reduces when HypurrFi USDT0 deploys |
-| USDT0 exposure | 7.4% ($55.2k) | 25% ($200k) | 🟢 Under | Scaling per plan |
+| Felix/Morpho | 67.4% ($476k) | 50% | RED — 17pts over cap | Deploy HypurrFi USDT0 to reduce; route new USDC to HypurrFi/HyperLend |
+| USDT0 exposure | 14.8% ($110k) | 25% ($200k) | GREEN | Under cap |
 
 ---
 
@@ -53,6 +55,10 @@ Last updated: 2026-04-24
 
 | Date | Position | Decision | Rationale |
 |------|----------|----------|-----------|
+| 2026-04-27 | FARTCOIN | HOLD (overdue review — recovered) | Funding recovered to 10.95% from 1.78%. Cap rate regime restored. |
+| 2026-04-27 | LINK | HOLD (RED cleared) | Funding recovered to 10.95% from 7.59%. Back at cap rate. |
+| 2026-04-27 | Felix USDT0 | HOLD (YELLOW cleared) | Rate surged to 13.38% from 5.81%. Idle USDT0 deployed ($80k → $110k). |
+| 2026-04-25 | USDT0 swap order | CLOSED (completed) | ~$49.84k USDC swapped to USDT0. All deployed to Felix USDT0. |
 | 2026-04-23 | LINK | HOLD (overrode EXIT signal) | Funding recovered from -8.04% to +10.95% overnight |
 | 2026-04-22 | OIL_BRENTOIL | EXIT (CLOSED) | Per deployment plan — capital redeployed to lending |
 | 2026-04-22 | hyna:LINK | EXIT (CLOSED) | Restructured to native-only. 2.4 dust remains. |

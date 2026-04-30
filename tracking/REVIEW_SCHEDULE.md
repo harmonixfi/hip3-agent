@@ -1,6 +1,6 @@
 # Position Review Schedule
 
-Last updated: 2026-04-29
+Last updated: 2026-04-30
 
 ---
 
@@ -12,7 +12,7 @@ Last updated: 2026-04-29
 |----------|--------|-------------|-------------|---------|---------------------|
 | Felix USDC Main | $351,700 | 6.39% ⚠️ | **2026-05-05 (Mon)** | APR < 5% for 3d (139 bps headroom, tightening) | Rotate excess above $300k to HypurrFi USDC or HyperLend. Pre-plan: at 5.5% alert, at 5% start rotation. |
 | HyperLend USDC | $230,209 | 5.63% | **2026-05-05 (Mon)** | APR < 3% (263 bps headroom) | Exit to Felix/HypurrFi |
-| Felix USDT0 | $110,100 | 6.48% ⚠️ | **2026-04-30 (Wed)** | APR < 8% for 2wk (YELLOW day 2 of 14) | Day 3 check: if still below 8%, evaluate partial rebalance ($30-50k) to HypurrFi USDT0 |
+| Felix USDT0 | $110,100 | 6.48% ⚠️ | **2026-05-04 (Sun)** | APR < 8% for 2wk (YELLOW day 3 of 14) | Day 3 reviewed Apr 30: HOLD — HypurrFi rate (6.36%) lower than Felix (6.48%), move not justified. Hard partial-rebalance if drops below 5%. Re-evaluate day 7 (May 4). |
 | Felix USDC (alt) | $10,800 | 6.39% | **2026-05-04 (Sun)** | — | Small, monitor with main |
 | Felix USDe | $3,600 | 7.83% | **2026-05-04 (Sun)** | — | Recovered from 6.49%. Small position. Monitor. |
 
@@ -22,7 +22,7 @@ Last updated: 2026-04-29
 |----------|----------|-------------|-------------|---------|---------------------|
 | FARTCOIN | $12,165 | 10.95% | **2026-05-01 (Thu)** | APR < 8% | Exit, redeploy $12k to lending. Funding is binary (cap or dead). |
 | LINK | $3,160 | 10.95% | **2026-05-01 (Thu)** | APR < 8% | Exit — funding is binary. Quick exit on flip. |
-| LINK hyna dust | $22 | n/a | **2026-04-29 (Tue)** ⏰ **TODAY — OVERDUE** | — | Clean up residual 2.4 short (cumFunding -$5.95). |
+| LINK hyna dust | $22 | n/a | **2026-04-30 (Wed)** ⏰ **OVERDUE** | — | Clean up residual 2.4 short (cumFunding -$5.95). Was due Apr 29. |
 
 ### Cross-Venue
 
@@ -35,10 +35,10 @@ Last updated: 2026-04-29
 | Target | Amount | Status | Review By |
 |--------|--------|--------|-----------|
 | HypurrFi USDT0 | $0 of $100k | Blocked — no idle USDT0. Rate 6.36%. Deprioritize unless Felix USDT0 stays below 8% past day 7. | **2026-05-05 (Mon)** |
-| HyperLend USDT | $0 of $50k | **7 DAYS OVERDUE.** Rate 6.27% (jumped +101 bps). DECIDE TODAY: execute USDC→USDT swap + deploy, or drop from plan. | **2026-04-29 (Tue)** ⏰ **TODAY** |
-| Idle xyz USDC | $9,300 | 8 days idle. Deploy → HypurrFi USDC (6.85%). Execute immediately. | **2026-04-29 (Tue)** ⏰ **TODAY** |
-| Idle USDH | $2,954 free | Deploy → Felix USDH (7.22%). Reduced from $4,854 — COPPER margin consumed $2,021. | **2026-04-29 (Tue)** ⏰ **TODAY** |
-| Idle USDC unified | $3,043 free | Deploy → HypurrFi USDC (6.85%). Reduced from $4,943 — COPPER margin consumed $1,969. | **2026-04-29 (Tue)** ⏰ **TODAY** |
+| HyperLend USDT | $0 of $50k | **8 DAYS OVERDUE.** Rate 6.27% (Apr 29). ~$68 cumulative foregone yield. Execute USDC→USDT swap + deploy, or formally drop. | **2026-04-30 (Wed)** ⏰ **OVERDUE** |
+| Idle xyz USDC | $9,300 | **9 days idle.** Deploy → HypurrFi USDC (6.85%). ~$14 cumulative foregone yield. | **2026-04-30 (Wed)** ⏰ **OVERDUE** |
+| Idle USDH | $2,954 free | Deploy → Felix USDH (7.22%). Reduced from $4,854 — COPPER margin consumed $2,021. | **2026-04-30 (Wed)** ⏰ **OVERDUE** |
+| Idle USDC unified | $3,043 free | Deploy → HypurrFi USDC (6.85%). Reduced from $4,943 — COPPER margin consumed $1,969. | **2026-04-30 (Wed)** ⏰ **OVERDUE** |
 
 ---
 
@@ -55,6 +55,7 @@ Last updated: 2026-04-29
 
 | Date | Position | Decision | Rationale |
 |------|----------|----------|-----------|
+| 2026-04-30 | Felix USDT0 | HOLD (day-3 review) | Rate 6.48%, still below 8% (YELLOW day 3). HypurrFi USDT0 rate (6.36%) lower — move not justified. HOLD until day 7 (May 4). Hard partial-rebalance if drops below 5%. |
 | 2026-04-29 | COPPER | HOLD (reviewed) | cumFunding $3.64, uPnL -$11.72 net. Margin holds ballooned to $3,990. HOLD — hard exit May 2 if not break-even on funding vs uPnL. |
 | 2026-04-29 | Felix USDT0 | WATCH (YELLOW day 2) | Rate partial recovery 6.08%→6.48%. Still below 8%. Check day 3 on Apr 30. |
 | 2026-04-29 | Felix USDC Main | WATCH (rate sliding) | Rate 6.39% — 3-day slide at ~50 bps/day. 139 bps headroom vs 5% trigger. GREEN but tightening. |

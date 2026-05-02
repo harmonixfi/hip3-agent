@@ -151,7 +151,13 @@ def _felix_get(
         headers={
             "Accept": "application/json",
             "Authorization": f"Bearer {jwt}",
-            "User-Agent": "arbit-felix-private/0.1",
+            "Origin": "https://trade.usefelix.xyz",
+            "Referer": "https://trade.usefelix.xyz/",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/147.0.0.0 Safari/537.36"
+            ),
         },
     )
     try:
@@ -430,7 +436,9 @@ def _parse_fills_response(
     from tracking.pipeline.fill_ingester import generate_synthetic_tid
 
     fills = []
-    orders = raw.get("orders", [])
+    # Felix orders API returns {"data": [...], "hasMore": bool, "lastId": str}
+    # Older responses may use {"orders": [...]} — support both.
+    orders = raw.get("data") or raw.get("orders") or []
     if not isinstance(orders, list):
         return fills
 
@@ -447,10 +455,20 @@ def _parse_fills_response(
         if not inst_id:
             continue
 
-        px = _to_float(order.get("averageFilledPrice"))
-        sz = _to_float(order.get("filledQuantity"))
-        if not px or px <= 0 or not sz or sz <= 0:
+        side = str(order.get("side", "")).upper()
+        if side not in ("BUY", "SELL"):
             continue
+
+        # Felix does not populate avgPrice/executedShares/executedStablecoin.
+        # notionalStablecoin = USD paid (BUY) or USD received (SELL).
+        # We store the notional as sz (in USD) with px=1.0 as a workaround so
+        # the record is not silently dropped. Downstream code should use
+        # notional_usdc from meta_json for accurate P&L rather than px*sz.
+        notional = _to_float(order.get("notionalStablecoin"))
+        if not notional or notional <= 0:
+            continue
+        px = 1.0
+        sz = notional
 
         side = str(order.get("side", "")).upper()
         if side not in ("BUY", "SELL"):

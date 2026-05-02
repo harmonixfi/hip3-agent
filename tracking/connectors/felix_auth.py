@@ -53,6 +53,7 @@ class FelixSession:
     jwt: str
     expires_at: int  # epoch seconds
     sub_org_id: str
+    session_private_key_hex: str = ""  # ephemeral session key for Turnkey signing API
 
     def is_expired(self) -> bool:
         """True if JWT has expired."""
@@ -71,6 +72,7 @@ class FelixSession:
             jwt=data["jwt"],
             expires_at=int(data["expires_at"]),
             sub_org_id=data["sub_org_id"],
+            session_private_key_hex=data.get("session_private_key_hex", ""),
         )
 
 
@@ -384,6 +386,8 @@ def initial_login(
         encoding=serialization.Encoding.X962,
         format=serialization.PublicFormat.CompressedPoint,
     ).hex()
+    # Serialize session private key for Turnkey signing API authentication
+    session_key_hex = session_key.private_numbers().private_value.to_bytes(32, "big").hex()
 
     # Step 3: Build stamp_login body (ROOT org, ephemeral session pubkey)
     body_str = build_stamp_login_body(session_public_key_hex=session_pub_hex)
@@ -404,6 +408,7 @@ def initial_login(
         jwt=jwt_token,
         expires_at=int(time.time()) + JWT_TTL_SECONDS,
         sub_org_id=sub_org_id,
+        session_private_key_hex=session_key_hex,
     )
 
 

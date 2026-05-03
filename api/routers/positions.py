@@ -179,8 +179,13 @@ def _build_position_summary(
         except (json.JSONDecodeError, TypeError):
             pass
 
-    base = meta.get("base", position_id)
-    strategy = meta.get("strategy_type", pos["strategy"] if "strategy" in pos.keys() else "SPOT_PERP")
+    base = pos["base"] or meta.get("base") or position_id
+    strategy = (
+        pos["strategy_type"]
+        or meta.get("strategy_type")
+        or (pos["strategy"] if "strategy" in pos.keys() else None)
+        or "SPOT_PERP"
+    )
 
     leg_rows = db.execute(
         """

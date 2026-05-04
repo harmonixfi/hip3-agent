@@ -1,6 +1,6 @@
 # Position Review Schedule
 
-Last updated: 2026-05-03
+Last updated: 2026-05-04
 
 ---
 
@@ -10,35 +10,36 @@ Last updated: 2026-05-03
 
 | Position | Amount | Current APY | Next Review | Trigger | Action If Triggered |
 |----------|--------|-------------|-------------|---------|---------------------|
-| Felix USDC Main | $351,900 | 5.75% ⚠️ | **2026-05-05 (Mon)** | APR < 5% for 3d (75 bps headroom — TIGHT) | Rotate $100-150K to HyperLend USDC. Research alternative USDC protocols. |
-| HyperLend USDC | $230,311 | 5.58% ✅ | **2026-05-05 (Mon)** | APR < 3% (258 bps headroom) | Exit to Felix/HypurrFi |
-| Felix USDT0 | $110,100 | 5.85% ⚠️ | **2026-05-04 (Sun) — DAY 7 HARD RE-EVAL** | APR < 8% for 2wk (YELLOW day 5 of 14) | USDT0 premium over USDC = 10 bps — uncompensated bridge risk. Evaluate full $110K USDT0→USDC rotation. Swap cost ~$27.50. Hard trigger fires May 11. |
-| Felix USDC (alt) | $10,800 | 5.75% | **2026-05-08 (Thu)** | — | Small, monitor with main |
-| Felix USDe | $3,600 | 7.84% | **2026-05-08 (Thu)** | — | Small position. Best risk-adjusted rate in portfolio. |
+| Felix USDC Main | $352,000 | 8.20% ✅ | **2026-05-08 (Thu)** | APR < 5% for 3d (320 bps headroom — RESTORED) | Rotate $100-150K to HyperLend USDC. |
+| HyperLend USDC | $230,385 | 11.33% ⚠️spike | **2026-05-06 (Tue)** — moved up due to spike | APR < 3% (833 bps headroom) | Exit to Felix/HypurrFi. **Per lesson #8 — use 7d avg ~5.5% for projections, not live 11.33%.** |
+| Felix USDT0 | $110,200 | 12.16% ✅ | **2026-05-08 (Thu)** | APR < 8% for 2wk (counter RESET — was Day 5) | USDT0 vs USDC premium back to 396 bps. Bridge risk compensated. |
+| Felix USDC (alt) | $10,800 | 8.20% | **2026-05-08 (Thu)** | — | Small, monitor with main |
+| Felix USDe | $3,600 | 17.76% ⚠️spike | **2026-05-06 (Tue)** | — | Tiny, but spike noted. |
 
 ### Spot-Perp Positions
 
 | Position | Notional | Current APR | Next Review | Trigger | Action If Triggered |
 |----------|----------|-------------|-------------|---------|---------------------|
-| FARTCOIN | $12,344 | 10.95% | **2026-05-08 (Thu)** | APR < 8% | Exit, redeploy to lending. Verify hyna funding spike ($19.17 vs $4.28/day expected). |
-| LINK | $3,116 | 8.75% ⚠️ | **2026-05-05 (Mon)** — moved up | APR < 8% (75 bps headroom — TIGHT) | Exit, redeploy to lending. Cap rate lifted — real rate emerging. |
-| LINK hyna dust | $22 | n/a | **2026-04-29 (Tue)** ⏰ **5 DAYS OVERDUE** | — | Clean up 2.4 short (cumFunding -$5.93). |
+| FARTCOIN | $12,408 | 13.00% | **2026-05-08 (Thu)** | APR < 8% | Exit, redeploy to lending. hyna funding spike +$17.80 again today — verify pattern. |
+| LINK | $3,090 | 10.95% | **2026-05-08 (Thu)** | APR < 8% (295 bps headroom — RESTORED) | Exit, redeploy to lending. |
+| LINK hyna dust | $22 | n/a | **2026-04-29 (Tue)** ⏰ **6 DAYS OVERDUE** | — | Clean up 2.4 short (cumFunding -$5.91). |
+| **GOLD (NEW)** | $1,528 | unknown (builder dex) | **2026-05-07 (Wed)** | APR < 8% (no automated check possible) | Builder dex — funding rate not visible from standard API. Manual verification required. Delta -8% (wider than spec). |
 
 ### Cross-Venue
 
 | Position | Notional | Next Review | Notes |
 |----------|----------|-------------|-------|
-| COPPER | ~$3,929 | **2026-05-02 (Fri)** 🔴 **1 DAY OVERDUE** | EXIT IMMEDIATELY. flx cumFunding negative day 2 (-$0.36, was +$1.81). Net P&L -$20.19. Thesis broken per lesson #11. |
+| COPPER | ~$3,924 | **2026-05-02 (Fri)** 🔴 **2 DAYS OVERDUE** | EXIT IMMEDIATELY. flx cumFunding bleeding RESUMED Day 4 (-$0.62). xyz LONG now earning positive funding (unusual). Net P&L -$18.89. Thesis fully inverted. |
 
 ### Pending Deployments
 
 | Target | Amount | Status | Review By |
 |--------|--------|--------|-----------|
-| HyperLend USDT | $0 of $50k | ❗ **12 DAYS OVERDUE.** Rate dropped to 5.17% (was 6.06%). ~$97 cumulative foregone yield. Execute or formally drop by May 5. | **OVERDUE — final decision by 2026-05-05** |
-| HypurrFi USDT0 | $0 of $100k | Blocked — no idle USDT0. Rate 6.06%. USDT0 thesis weakening (all USDT0 rates <8%). Consider formally dropping if day-7 USDT0 review recommends exit. | **2026-05-05 (Mon)** |
-| Idle xyz USDC | $9,300 | ⏰ **12 days idle.** Deploy → Felix USDC (5.75%). HypurrFi USDC crashed to 2.91% — not viable for diversification. ~$22 cumulative foregone. | **OVERDUE — execute ASAP** |
-| Idle USDH (unified) | $4,965 (all freed post-COPPER exit) | Deploy → Felix USDH (5.72% — crashed from 9.90%). Reassess rate before deploying. | **Execute after COPPER exit** |
-| Idle USDC (unified) | $5,006 (all freed post-COPPER exit) | Deploy → Felix USDC (5.75%). | **Execute after COPPER exit** |
+| HyperLend USDT | $0 of $50k | ❗ **13 DAYS OVERDUE.** Rate 5.49%. **Final decision required by 2026-05-05 — default to DROP if no action.** Options: A) Deploy as planned (+$7.52/d). B) Redirect to HyperLend USDC (per spike caution, only at 7d avg confirmation). C) Drop, redirect to Felix USDC (+$7.88/d, worsens concentration). | **2026-05-05 (Mon) — HARD DEADLINE** |
+| HypurrFi USDT0 | $0 of $100k | Blocked — no idle USDT0. Rate 7.40%. USDT0 thesis recovered (Felix USDT0 at 12.16%). Reconsider after HyperLend USDT decision. | **2026-05-08 (Thu)** |
+| Idle xyz USDC | $6,300 | ⏰ **13 days idle.** Was $9,300 — $3K moved to native spot for margin. Deploy → Felix USDC (8.20%). HypurrFi USDC at 5.02% — diversification still not viable. | **OVERDUE — execute ASAP** |
+| Idle USDH (unified) | $2,954 free + $2,014 post-COPPER = ~$4,968 | Deploy → Felix USDH (6.72% — recovered partially). | **Execute after COPPER exit** |
+| Idle USDC (unified) | $2,270 free + $1,963 post-COPPER = ~$4,233 | Deploy → Felix USDC (8.20%). Note: $737 already consumed by GOLD position. | **Execute after COPPER exit** |
 
 ---
 
@@ -46,8 +47,8 @@ Last updated: 2026-05-03
 
 | Protocol | Current | Cap | Status | Path to Reduce |
 |----------|---------|-----|--------|----------------|
-| Felix/Morpho | 67.4% ($476K) | 50% | RED — 17pts over cap | HyperLend USDT deploy (-5.9pts → 61.5%). But idle USDC redeploy to Felix worsens it. Structural issue — needs new protocol or larger HyperLend allocation. |
-| USDT0 exposure | 14.8% ($110K) | 25% ($200K) | GREEN | USDT0 thesis broken (5.85% vs USDC 5.75% = 10bps premium). Day 7 review may trigger USDT0→USDC rotation. If so, USDT0 drops to 0%. |
+| Felix/Morpho | 67.4% ($476,600) | 50% | RED — 17pts over cap | HyperLend USDT $50K deploy (-5.9pts → 61.5%). Adding more USDC to HyperLend an option if 11.33% rate sustains 3+ days (currently spike per lesson #8). Structural — needs new protocol or larger HyperLend allocation. |
+| USDT0 exposure | 14.8% ($110,200) | 25% ($200K) | GREEN | Premium recovered to 396 bps over USDC. Hold. |
 
 ---
 
@@ -55,7 +56,11 @@ Last updated: 2026-05-03
 
 | Date | Position | Decision | Rationale |
 |------|----------|----------|-----------|
-| 2026-05-03 | COPPER | **EXIT (1 day overdue)** | flx cumFunding negative day 2 (-$0.36). Net P&L -$20.19. Thesis broken. Deteriorated -$15 from yesterday's -$5.50. |
+| 2026-05-04 | Felix USDT0 | YELLOW counter RESET | Rate surged 8.53%→12.16% (+363bps). Day 5 of 14 cleared. USDT0/USDC premium back to 396 bps. |
+| 2026-05-04 | Felix USDC | Trigger watch CLEARED | Rate recovered to 8.20%. 320 bps headroom (was 75 yesterday). |
+| 2026-05-04 | LINK | Trigger watch CLEARED | Rate stable at 10.95%. 295 bps headroom (was 75 yesterday). |
+| 2026-05-04 | COPPER | **EXIT (2 days overdue)** | Day 4 of broken thesis. flx bleeding resumed -$0.36→-$0.62. Net P&L -$18.89. xyz LONG paying funding (unusual). |
+| 2026-05-03 | COPPER | **EXIT (1 day overdue)** | flx cumFunding negative day 2. Net P&L -$20.19. Thesis broken. |
 | 2026-05-02 | COPPER | **EXIT (recommended)** | flx cumFunding decreased $3.10→$1.81 — short side paid funding, thesis broken. Net P&L: -$5.50. |
 | 2026-05-01 | FARTCOIN | HOLD | 10.95% cap rate, GREEN. 295 bps headroom. Delta neutral (-0.4%). Next review May 8. |
 | 2026-05-01 | LINK | HOLD | 10.95% cap rate, GREEN. 295 bps headroom. Delta neutral (1.1%). Next review May 8. |

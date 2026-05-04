@@ -323,6 +323,60 @@ def test_parse_hl_fill_malformed():
     assert parse_hl_fill({"time": 123, "coin": "X", "side": "Z", "px": "1", "sz": "1"}, "0xabc", {}, []) is None
 
 
+def test_sync_fills_raises_on_missing_account_id():
+    """sync_fills_for_position_window raises ValueError when leg has no account_id."""
+    from tracking.pipeline.fill_ingester import sync_fills_for_position_window
+
+    con = sqlite3.connect(":memory:")
+    con.executescript("""
+        CREATE TABLE pm_positions (position_id TEXT PRIMARY KEY, venue TEXT NOT NULL,
+            strategy TEXT, status TEXT NOT NULL, created_at_ms INTEGER NOT NULL,
+            updated_at_ms INTEGER NOT NULL, closed_at_ms INTEGER, raw_json TEXT,
+            meta_json TEXT, base TEXT, strategy_type TEXT);
+        CREATE TABLE pm_legs (leg_id TEXT PRIMARY KEY, position_id TEXT NOT NULL,
+            venue TEXT NOT NULL, inst_id TEXT NOT NULL, side TEXT NOT NULL,
+            size REAL NOT NULL, entry_price REAL, current_price REAL,
+            unrealized_pnl REAL, realized_pnl REAL, status TEXT NOT NULL,
+            opened_at_ms INTEGER NOT NULL, closed_at_ms INTEGER, raw_json TEXT,
+            meta_json TEXT, account_id TEXT);
+        CREATE TABLE pm_fills (fill_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            venue TEXT NOT NULL, account_id TEXT NOT NULL, tid TEXT, oid TEXT,
+            inst_id TEXT NOT NULL, side TEXT NOT NULL, px REAL NOT NULL,
+            sz REAL NOT NULL, fee REAL, fee_currency TEXT, ts INTEGER NOT NULL,
+            closed_pnl REAL, dir TEXT, builder_fee REAL, position_id TEXT,
+            leg_id TEXT, raw_json TEXT, meta_json TEXT);
+    """)
+    con.execute("INSERT INTO pm_positions VALUES ('pos_bad','hl',NULL,'OPEN',0,0,NULL,NULL,NULL,'X','SPOT_PERP')")
+    con.execute("INSERT INTO pm_legs (leg_id,position_id,venue,inst_id,side,size,status,opened_at_ms,account_id) VALUES ('leg_bad','pos_bad','hl','X/USDC','LONG',0,'OPEN',0,'')")
+    con.commit()
+
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="account_id"):
+        sync_fills_for_position_window(con, "pos_bad", start_ts=1000)
+
+    con.close()
+
+
+def test_sync_fills_raises_on_no_legs():
+    """sync_fills_for_position_window raises ValueError when position has no legs."""
+    from tracking.pipeline.fill_ingester import sync_fills_for_position_window
+
+    con = sqlite3.connect(":memory:")
+    con.execute("""CREATE TABLE pm_legs (leg_id TEXT PRIMARY KEY, position_id TEXT NOT NULL,
+        venue TEXT NOT NULL, inst_id TEXT NOT NULL, side TEXT NOT NULL,
+        size REAL NOT NULL, entry_price REAL, current_price REAL,
+        unrealized_pnl REAL, realized_pnl REAL, status TEXT NOT NULL,
+        opened_at_ms INTEGER NOT NULL, closed_at_ms INTEGER, raw_json TEXT,
+        meta_json TEXT, account_id TEXT)""")
+    con.commit()
+
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="no legs"):
+        sync_fills_for_position_window(con, "pos_missing", start_ts=0)
+
+    con.close()
+
+
 def main() -> int:
     test_load_fill_targets_excludes_closed()
     print("PASS: test_load_fill_targets_excludes_closed")

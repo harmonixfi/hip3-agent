@@ -36,6 +36,7 @@ from tracking.pipeline.trades import (
     delete_trade,
     TradeCreateError,
 )
+from tracking.pipeline.fill_ingester import sync_fills_for_position_window
 
 
 router = APIRouter(prefix="/api/trades", tags=["trades"])
@@ -150,6 +151,16 @@ def create_trade(
     req: TradeCreateRequest,
     db: sqlite3.Connection = Depends(get_db_writable),
 ):
+    # Pull fills on-demand so the user doesn't have to wait for the hourly ingester.
+    # Committed separately so fills persist even if trade creation later fails.
+    try:
+        sync_fills_for_position_window(db, req.position_id, req.start_ts)
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception:
+        pass  # network/API errors are best-effort; proceed with whatever is in DB
+
     try:
         result = create_draft_trade(
             db,
@@ -170,7 +181,16 @@ def preview_trade(
     req: TradePreviewRequest,
     db: sqlite3.Connection = Depends(get_db_writable),
 ):
-    """Dry-run: create DRAFT inside a savepoint then roll back."""
+    """Dry-run: pull fills on-demand, create DRAFT inside a savepoint then roll back."""
+    # Fills are committed before the savepoint so they persist after preview rollback.
+    try:
+        sync_fills_for_position_window(db, req.position_id, req.start_ts)
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception:
+        pass  # best-effort; proceed with whatever is in DB
+
     db.execute("SAVEPOINT preview")
     try:
         result = create_draft_trade(

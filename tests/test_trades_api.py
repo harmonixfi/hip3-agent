@@ -216,3 +216,161 @@ def test_get_detail_includes_linked_fills(client):
 def test_get_unknown_returns_404(client):
     r = client.get("/api/trades/trd_missing")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# On-demand fill sync tests
+# ---------------------------------------------------------------------------
+
+def _make_db_and_client(schema, setup_sql: list[str]):
+    """Helper: in-memory DB + TestClient with overridden deps."""
+    from api.config import get_settings
+    get_settings.cache_clear()
+
+    con = sqlite3.connect(":memory:", check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    con.executescript(schema)
+    for sql in setup_sql:
+        con.execute(sql)
+    con.commit()
+
+    def _override():
+        yield con
+
+    app.dependency_overrides[get_db] = _override
+    app.dependency_overrides[get_db_writable] = _override
+    c = TestClient(app)
+    c.headers.update({"X-API-Key": TEST_API_KEY})
+    return con, c
+
+
+def test_preview_calls_on_demand_sync(monkeypatch):
+    """preview_trade triggers on-demand sync and finds fills even if DB was empty."""
+    con, c = _make_db_and_client(
+        _INLINE_SCHEMA,
+        [
+            "INSERT INTO pm_positions (position_id,venue,status,created_at_ms,updated_at_ms,base,strategy_type) VALUES ('pos_sync','hyperliquid','OPEN',0,0,'SYNC','SPOT_PERP')",
+            "INSERT INTO pm_legs (leg_id,position_id,venue,inst_id,side,size,status,opened_at_ms,account_id) VALUES ('pos_sync_SPOT','pos_sync','hyperliquid','SYNC/USDC','LONG',0,'OPEN',0,'0xACCT')",
+            "INSERT INTO pm_legs (leg_id,position_id,venue,inst_id,side,size,status,opened_at_ms,account_id) VALUES ('pos_sync_PERP','pos_sync','hyperliquid','xyz:SYNC','SHORT',0,'OPEN',0,'0xACCT')",
+        ],
+    )
+
+    # Override the stub from conftest with one that actually inserts fills
+    import api.routers.trades as trades_router
+
+    def _mock_sync(db, position_id, start_ts):
+        db.execute("INSERT INTO pm_fills (venue,account_id,inst_id,side,px,sz,fee,ts,leg_id,position_id) VALUES ('hyperliquid','0xACCT','SYNC/USDC','BUY',100.0,1.0,0.01,1100,'pos_sync_SPOT','pos_sync')")
+        db.execute("INSERT INTO pm_fills (venue,account_id,inst_id,side,px,sz,fee,ts,leg_id,position_id) VALUES ('hyperliquid','0xACCT','xyz:SYNC','SELL',101.0,1.0,0.01,1150,'pos_sync_PERP','pos_sync')")
+        db.commit()
+        return 2
+
+    monkeypatch.setattr(trades_router, "sync_fills_for_position_window", _mock_sync)
+
+    try:
+        r = c.post("/api/trades/preview", json={
+            "position_id": "pos_sync",
+            "trade_type": "OPEN",
+            "start_ts": 1000,
+            "end_ts": 2000,
+        })
+    finally:
+        app.dependency_overrides.clear()
+        con.close()
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["long_fill_count"] == 1
+    assert body["short_fill_count"] == 1
+    assert body["spread_bps"] == pytest.approx((100.0 / 101.0 - 1) * 10_000, abs=0.01)
+
+    # Preview must NOT persist the trade draft
+    # (fills were already committed before savepoint, but the trade row itself was rolled back)
+
+
+def test_preview_returns_422_on_missing_account_id():
+    """preview_trade returns 422 with a clear message when a leg has no account_id."""
+    con, c = _make_db_and_client(
+        _INLINE_SCHEMA,
+        [
+            "INSERT INTO pm_positions (position_id,venue,status,created_at_ms,updated_at_ms,base,strategy_type) VALUES ('pos_noacct','hyperliquid','OPEN',0,0,'X','SPOT_PERP')",
+            "INSERT INTO pm_legs (leg_id,position_id,venue,inst_id,side,size,status,opened_at_ms,account_id) VALUES ('pos_noacct_SPOT','pos_noacct','hyperliquid','X/USDC','LONG',0,'OPEN',0,'')",
+            "INSERT INTO pm_legs (leg_id,position_id,venue,inst_id,side,size,status,opened_at_ms,account_id) VALUES ('pos_noacct_PERP','pos_noacct','hyperliquid','xyz:X','SHORT',0,'OPEN',0,'')",
+        ],
+    )
+
+    try:
+        r = c.post("/api/trades/preview", json={
+            "position_id": "pos_noacct",
+            "trade_type": "OPEN",
+            "start_ts": 1000,
+            "end_ts": 2000,
+        })
+    finally:
+        app.dependency_overrides.clear()
+        con.close()
+
+    assert r.status_code == 422
+    assert "account_id" in r.json()["detail"]
+
+
+def test_create_position_resolves_account_id(monkeypatch):
+    """create_position must populate account_id from wallet_label via resolve_venue_accounts."""
+    import tracking.position_manager.accounts as accts_mod
+
+    monkeypatch.setattr(
+        accts_mod, "resolve_venue_accounts",
+        lambda venue: {"main": "0xWALLET_MAIN", "alt": "0xWALLET_ALT"},
+    )
+
+    from api.config import get_settings
+    get_settings.cache_clear()
+
+    con = sqlite3.connect(":memory:", check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    con.executescript(_INLINE_SCHEMA)
+    con.commit()
+
+    def _override():
+        yield con
+
+    app.dependency_overrides[get_db] = _override
+    app.dependency_overrides[get_db_writable] = _override
+
+    try:
+        c = TestClient(app)
+        c.headers.update({"X-API-Key": TEST_API_KEY})
+
+        r = c.post("/api/positions", json={
+            "position_id": "pos_wallettest",
+            "base": "TEST",
+            "strategy_type": "SPOT_PERP",
+            "venue": "hyperliquid",
+            "long_leg": {
+                "leg_id": "pos_wallettest_SPOT",
+                "venue": "hyperliquid",
+                "inst_id": "TEST/USDC",
+                "side": "LONG",
+                "wallet_label": "main",
+            },
+            "short_leg": {
+                "leg_id": "pos_wallettest_PERP",
+                "venue": "hyperliquid",
+                "inst_id": "xyz:TEST",
+                "side": "SHORT",
+                "wallet_label": "alt",
+            },
+        })
+        assert r.status_code == 201, r.text
+
+        rows = {
+            r["leg_id"]: r["account_id"]
+            for r in con.execute(
+                "SELECT leg_id, account_id FROM pm_legs WHERE position_id = 'pos_wallettest'"
+            ).fetchall()
+        }
+    finally:
+        app.dependency_overrides.clear()
+        con.close()
+
+    assert rows["pos_wallettest_SPOT"] == "0xWALLET_MAIN"
+    assert rows["pos_wallettest_PERP"] == "0xWALLET_ALT"

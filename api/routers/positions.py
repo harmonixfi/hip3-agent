@@ -613,18 +613,29 @@ def create_position(
     if existing:
         raise HTTPException(status_code=409, detail=f"position already exists: {req.position_id}")
 
+    # Resolve wallet_label -> account_id from strategies config (mirrors db_sync.py logic)
+    venue_accounts: dict = {}
+    try:
+        from tracking.position_manager.accounts import resolve_venue_accounts
+        venue_accounts = resolve_venue_accounts(req.venue)
+    except Exception:
+        pass  # best-effort; account_id stays empty if config unavailable
+
     db.execute(
         "INSERT INTO pm_positions (position_id, venue, status, created_at_ms, updated_at_ms, base, strategy_type) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (req.position_id, req.venue, "OPEN", now, now, req.base, req.strategy_type),
     )
     for leg in (req.long_leg, req.short_leg):
+        account_id = leg.account_id or ""
+        if not account_id and leg.wallet_label:
+            account_id = venue_accounts.get(leg.wallet_label, "")
         db.execute(
             "INSERT INTO pm_legs (leg_id, position_id, venue, inst_id, side, size, status, opened_at_ms, account_id, meta_json) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 leg.leg_id, req.position_id, leg.venue, leg.inst_id, leg.side,
-                0.0, "OPEN", now, leg.account_id or "",
+                0.0, "OPEN", now, account_id,
                 json.dumps({"wallet_label": leg.wallet_label}) if leg.wallet_label else None,
             ),
         )

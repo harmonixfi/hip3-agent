@@ -23,6 +23,25 @@ from tracking.pipeline.spot_meta import resolve_coin
 
 
 # ---------------------------------------------------------------------------
+# Spot index map — module-level cache, refreshed at most once per hour
+# ---------------------------------------------------------------------------
+
+_SPOT_CACHE: Dict[str, Any] = {"ts": 0, "map": {}}
+_SPOT_CACHE_TTL_MS = 3600 * 1000
+
+
+def get_cached_spot_index_map() -> Dict[int, str]:
+    """Return the spotMeta index map, fetching from HL API at most once per hour."""
+    from tracking.pipeline.spot_meta import fetch_spot_index_map
+
+    elapsed = now_ms() - _SPOT_CACHE["ts"]
+    if elapsed >= _SPOT_CACHE_TTL_MS:
+        _SPOT_CACHE["map"] = fetch_spot_index_map()
+        _SPOT_CACHE["ts"] = now_ms()
+    return _SPOT_CACHE["map"]
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -385,3 +404,48 @@ def ingest_hyperliquid_fills(
     inserted = insert_fills(con, all_fills)
     print(f"  fills: {len(all_fills)} parsed, {inserted} new inserted")
     return inserted
+
+
+# ---------------------------------------------------------------------------
+# On-demand fill sync — called at trade preview / create time
+# ---------------------------------------------------------------------------
+
+
+def sync_fills_for_position_window(
+    con: sqlite3.Connection,
+    position_id: str,
+    start_ts: int,
+) -> int:
+    """Pull and ingest fills for a position from start_ts to now, immediately.
+
+    Used by the trade creation endpoint so users don't have to wait for the
+    scheduled hourly ingester after opening a position.
+
+    Raises:
+        ValueError: if any leg for this position has an empty account_id.
+                    This is a configuration error — position must be recreated
+                    with a valid wallet_label or patched in pm_legs directly.
+    """
+    rows = con.execute(
+        "SELECT leg_id, account_id FROM pm_legs WHERE position_id = ?",
+        (position_id,),
+    ).fetchall()
+
+    if not rows:
+        raise ValueError(f"position {position_id!r} has no legs")
+
+    missing = [r[0] for r in rows if not (r[1] or "").strip()]
+    if missing:
+        raise ValueError(
+            f"legs {missing} have no account_id — "
+            "recreate the position with a valid wallet_label "
+            "or patch pm_legs.account_id directly"
+        )
+
+    spot_index_map = get_cached_spot_index_map()
+    return ingest_hyperliquid_fills(
+        con,
+        spot_index_map,
+        since_ms=start_ts,
+        position_ids=[position_id],
+    )

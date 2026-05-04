@@ -112,7 +112,7 @@ export default function NewTradeModal({ onClose, onSaved, defaultPositionId }: P
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-      <div className="w-[600px] max-h-[90vh] overflow-auto rounded bg-white p-6 shadow-lg">
+      <div className="w-[600px] max-h-[90vh] overflow-auto rounded bg-white p-6 shadow-lg text-black">
         <h2 className="mb-4 text-xl font-bold">New Trade</h2>
 
         <div className="space-y-3">
